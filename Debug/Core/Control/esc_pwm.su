@@ -1,0 +1,6 @@
+../Core/Control/esc_pwm.c:45:6:ESC_PWM_Init	8	static
+../Core/Control/esc_pwm.c:73:6:ESC_PWM_Failsafe	4	static
+../Core/Control/esc_pwm.c:93:6:ESC_PWM_Set_Port	16	static
+../Core/Control/esc_pwm.c:105:6:ESC_PWM_Set_Stbd	16	static
+../Core/Control/esc_pwm.c:117:6:ESC_PWM_Set_Both	16	static
+../Core/Control/esc_pwm.c:133:13:ESC_PWM_Set	24	static

@@ -1,0 +1,6 @@
+../Core/Control/esc_pwm.c:45:6:ESC_PWM_Init	1
+../Core/Control/esc_pwm.c:73:6:ESC_PWM_Failsafe	1
+../Core/Control/esc_pwm.c:93:6:ESC_PWM_Set_Port	1
+../Core/Control/esc_pwm.c:105:6:ESC_PWM_Set_Stbd	1
+../Core/Control/esc_pwm.c:117:6:ESC_PWM_Set_Both	1
+../Core/Control/esc_pwm.c:133:13:ESC_PWM_Set	6

@@ -1,0 +1,22 @@
+Core/
+├── Config/
+│   └── pin_config.h
+│
+├── Control/
+│   ├── esc_pwm.c
+│   ├── esc_pwm.h
+│   ├── drive.c
+│   └── drive.h
+│
+├── Sensors/
+│   ├── imu.c
+│   ├── bar30.c
+│   └── battery.c
+│
+├── Safety/
+│   ├── leak.c
+│   └── watchdog.c
+│
+├── Comms/
+│   ├── uart_pi.c
+│   └── uart_pi.h
