@@ -27,6 +27,7 @@
 /* USER CODE BEGIN Includes */
 #include "pin_config.h"
 #include "esc_pwm.h"
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -59,6 +60,7 @@ static void MX_ADC1_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 static void gpio_init(void);
+int _write(int file, char *ptr, int len);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -103,14 +105,19 @@ int main(void)
 
       // First UART startup log — confirms system is alive
       // Keep UART text plain ASCII for reliable terminal output.
-      char msg[] = "StigReyn AUV v1.0 starting...\r\n";
-      HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg)-1, 100);
+            
+      // printf() is redirected to USART2 by _write() in USER CODE 4.
+      printf("StigReyn AUV v1.0 starting...\r\n");
+      printf("ESC PWM init complete - PA5 + PA1 neutral\r\n");
+      printf("System ready - waiting for commands\r\n");
+      // char msg[] = "StigReyn AUV v1.0 starting...\r\n";
+      // HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg)-1, 100);
 
-      char pwm_msg[] = "ESC PWM init complete - PA5 + PA1 neutral\r\n";
-      HAL_UART_Transmit(&huart2, (uint8_t*)pwm_msg, sizeof(pwm_msg)-1, 100);
+      // char pwm_msg[] = "ESC PWM init complete - PA5 + PA1 neutral\r\n";
+      // HAL_UART_Transmit(&huart2, (uint8_t*)pwm_msg, sizeof(pwm_msg)-1, 100);
 
-      char ready_msg[] = "System ready - waiting for commands\r\n";
-      HAL_UART_Transmit(&huart2, (uint8_t*)ready_msg, sizeof(ready_msg)-1, 100);
+      // char ready_msg[] = "System ready - waiting for commands\r\n";
+      // HAL_UART_Transmit(&huart2, (uint8_t*)ready_msg, sizeof(ready_msg)-1, 100);
 
   /* USER CODE END 2 */
 
@@ -359,6 +366,17 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+// ── printf UART redirect ─────────────────────────────────────
+// Retargets printf() to USART2 so debug messages appear on Mac terminal.
+// This is debug infrastructure only; control-path code remains bare metal.
+int _write(int file, char *ptr, int len)
+{
+    (void)file;
+    HAL_UART_Transmit(&huart2, (uint8_t*)ptr, len, 100);
+    return len;
+}
+
 static void gpio_init(void)
 {
     // ── PB0 — LED_STATUS — output ────────────────────────────
