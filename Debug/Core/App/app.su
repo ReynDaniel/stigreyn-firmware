@@ -1,0 +1,4 @@
+../Core/App/app.c:31:6:app_init	8	static
+../Core/App/app.c:46:6:app_update	8	static
+../Core/App/app.c:123:6:app_fault	8	static
+../Core/App/app.c:139:6:app_reset	8	static

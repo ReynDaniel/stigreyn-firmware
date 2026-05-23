@@ -30,7 +30,8 @@ Src/main.o: ../Src/main.c ../Inc/main.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim_ex.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h \
- ../Core/Config/pin_config.h ../Core/Control/esc_pwm.h
+ ../Core/Config/pin_config.h ../Core/Config/feature_flags.h \
+ ../Core/Control/esc_pwm.h ../Core/App/app.h ../Core/Safety/safety.h
 ../Inc/main.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h:
 ../Inc/stm32f4xx_hal_conf.h:
@@ -64,4 +65,7 @@ Src/main.o: ../Src/main.c ../Inc/main.h \
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim_ex.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h:
 ../Core/Config/pin_config.h:
+../Core/Config/feature_flags.h:
 ../Core/Control/esc_pwm.h:
+../Core/App/app.h:
+../Core/Safety/safety.h:

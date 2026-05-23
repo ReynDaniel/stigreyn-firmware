@@ -9,24 +9,31 @@
 // v1.0.0 2026-06-01 — blink LED, toolchain verified
 // v1.0.1 2026-06-20 — TIM2 PWM neutral on PA5 + PA1
 // v1.0.2 2026-06-21 — bare metal GPIO, ESC driver integrated
+// v1.0.3 2026-06-22 — PLL 84MHz, UART debug, bare metal init
 // ═══════════════════════════════════════════════════════════════
 // SYSTEM STARTUP SEQUENCE:
-// 1. HAL_Init()          — SysTick, interrupt priority grouping
-// 2. SystemClock_Config() — HSI 16MHz (PLL upgrade at Stage 3)
-// 3. MX_GPIO_Init()      — RCC clocks, pin modes (bare metal below)
-// 4. MX_TIM2_Init()      — TIM2 PSC=15 ARR=19999 PWM mode
-// 5. gpio_init()         — our bare metal GPIO setup
-// 6. ESC_PWM_Init()      — start PWM, set neutral on both thrusters
-// 7. while(1)            — main loop, heartbeat LED
+// 1. HAL_Init()           — SysTick only (replaced Stage 3)
+// 2. SystemClock_Config() — PLL 84MHz — keep HAL (complex)
+// 3. rcc_init()           — bare metal peripheral clock enables
+// 4. gpio_init()          — bare metal pin MODER + PUPDR
+// 5. uart2_init()         — bare metal UART2 115200 8N1
+// 6. tim2_pwm_gpio_init() — bare metal PA1/PA5 AF1 TIM2
+// 7. tim2_pwm_mode_init() — bare metal TIM2 PWM CH1+CH2
+// 8. ESC_PWM_Init()       — enable outputs, set neutral
+// 9. while(1)             — main loop, heartbeat LED
 // ═══════════════════════════════════════════════════════════════
 /* USER CODE END Header */
+
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "pin_config.h"
+#include "feature_flags.h"
 #include "esc_pwm.h"
+#include "app.h"
+#include "safety.h"
 #include <stdio.h>
 /* USER CODE END Includes */
 
@@ -43,23 +50,19 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-ADC_HandleTypeDef hadc1;
-
-TIM_HandleTypeDef htim2;
-
-UART_HandleTypeDef huart2;
-
 /* USER CODE BEGIN PV */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
-static void MX_TIM2_Init(void);
-static void MX_ADC1_Init(void);
-static void MX_USART2_UART_Init(void);
+
 /* USER CODE BEGIN PFP */
+static void rcc_init(void);
 static void gpio_init(void);
+static void uart2_init(void);
+static void tim2_pwm_gpio_init(void);
+static void tim2_pwm_mode_init(void);
+static void uart2_write(uint8_t *data, uint16_t len);
 int _write(int file, char *ptr, int len);
 /* USER CODE END PFP */
 
@@ -67,320 +70,118 @@ int _write(int file, char *ptr, int len);
 /* USER CODE BEGIN 0 */
 /* USER CODE END 0 */
 
-/**
-  * @brief  The application entry point.
-  * @retval int
-  */
+// ═══════════════════════════════════════════════════════════════
+// main
+// ═══════════════════════════════════════════════════════════════
 int main(void)
 {
+    /* USER CODE BEGIN 1 */
+    /* USER CODE END 1 */
 
-  /* USER CODE BEGIN 1 */
-  /* USER CODE END 1 */
+    // ── Keep HAL_Init — sets up SysTick for HAL_Delay ────────
+    // ── TODO Stage 3: replace HAL_Delay with timer tick ──────
+    HAL_Init();
 
-  /* MCU Configuration--------------------------------------------------------*/
+    // ── Keep SystemClock_Config — PLL is complex ─────────────
+    // 20+ registers, CubeMX generates correctly
+    // PLLM=8 PLLN=168 PLLP=4 → 84MHz SYSCLK
+    SystemClock_Config();
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+    /* USER CODE BEGIN 2 */
 
-  /* USER CODE BEGIN Init */
+    // ── Bare metal from here ──────────────────────────────────
+    rcc_init();           // enable all peripheral clocks
+    gpio_init();          // configure all GPIO pins
+    uart2_init();         // UART2 115200 8N1 bare metal
+    tim2_pwm_gpio_init(); // PA1/PA5 → AF1 TIM2
+    tim2_pwm_mode_init(); // TIM2 PWM mode CH1+CH2
+    ESC_PWM_Init();       // enable outputs, set 1500µs neutral
 
-  /* USER CODE END Init */
+#if FEATURE_LEAK_ISR
+    safety_init();
+#else
+    printf("WARNING: leak ISR disabled - feature_flags.h\r\n");
+#endif
 
-  /* Configure the system clock */
-  SystemClock_Config();
+    app_init();
 
-  /* USER CODE BEGIN SysInit */
+    // ── Startup log ───────────────────────────────────────────
+    printf("StigReyn AUV v1.0 starting...\r\n");
+    printf("Clock: PLL 84MHz\r\n");
+    printf("ESC PWM init complete - PA5 + PA1 neutral\r\n");
+    printf("System ready - STATE_SAFE\r\n");
 
-  /* USER CODE END SysInit */
+    /* USER CODE END 2 */
 
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_TIM2_Init();
-  MX_ADC1_Init();
-  MX_USART2_UART_Init();
-  /* USER CODE BEGIN 2 */
-
-      gpio_init();
-      ESC_PWM_Init();
-
-      // First UART startup log — confirms system is alive
-      // Keep UART text plain ASCII for reliable terminal output.
-            
-      // printf() is redirected to USART2 by _write() in USER CODE 4.
-      printf("StigReyn AUV v1.0 starting...\r\n");
-      printf("ESC PWM init complete - PA5 + PA1 neutral\r\n");
-      printf("System ready - waiting for commands\r\n");
-      // char msg[] = "StigReyn AUV v1.0 starting...\r\n";
-      // HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg)-1, 100);
-
-      // char pwm_msg[] = "ESC PWM init complete - PA5 + PA1 neutral\r\n";
-      // HAL_UART_Transmit(&huart2, (uint8_t*)pwm_msg, sizeof(pwm_msg)-1, 100);
-
-      // char ready_msg[] = "System ready - waiting for commands\r\n";
-      // HAL_UART_Transmit(&huart2, (uint8_t*)ready_msg, sizeof(ready_msg)-1, 100);
-
-  /* USER CODE END 2 */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
+    /* USER CODE BEGIN WHILE */
     while (1)
     {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 
-        // ── Heartbeat LED ────────────────────────────────────
-        // PB0 blinks 500ms — confirms firmware is running
-        // bare metal toggle — no HAL
-        GPIOB->ODR ^= (1 << LED_STATUS_PB0);   // 0000 0001 — toggle PB0
-        HAL_Delay(500);
+        app_update();
+        HAL_Delay(10);   // 100Hz tick
 
-        // ── TODO: MAIN CONTROL LOOP ──────────────────────────
-        // Stage 3: replace HAL_Delay with timer tick flag
-        // Stage 4: add safety checks - leak, battery, watchdog
-        // Stage 5: add sensor reads - IMU, Bar30
-        // Stage 6: add Drive_Set() - throttle + turn commands
-        // Stage 7: add UART RX commands from Pi
-        // Stage 7b: add periodic telemetry at low rate, not every loop
-        // Ignore for now - continue
+#if FEATURE_HEARTBEAT_LED
+        static uint32_t heartbeat_tick = 0;
+        heartbeat_tick++;
+
+        if (heartbeat_tick >= 50)   // 50 x 10ms = 500ms
+        {
+            heartbeat_tick = 0;
+            GPIOB->ODR ^= (1 << LED_STATUS_PB0);
+        }
+#endif
+
+        // ── TODO: MAIN CONTROL LOOP ───────────────────────────
+        // Stage 4: safety checks — leak, battery, watchdog
+        // Stage 5: sensor reads — IMU, Bar30
+        // Stage 6: Drive_Set() — throttle + turn
+        // Stage 7: UART RX — commands from Pi
         // ─────────────────────────────────────────────────────
     }
-  /* USER CODE END 3 */
-}
-
-/**
-  * @brief System Clock Configuration
-  * @retval None
-  */
-void SystemClock_Config(void)
-{
-  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-
-  /** Configure the main internal regulator output voltage
-  */
-  __HAL_RCC_PWR_CLK_ENABLE();
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE3);
-
-  /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
-
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
-  {
-    Error_Handler();
-  }
-}
-
-/**
-  * @brief ADC1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_ADC1_Init(void)
-{
-
-  /* USER CODE BEGIN ADC1_Init 0 */
-
-  /* USER CODE END ADC1_Init 0 */
-
-  ADC_ChannelConfTypeDef sConfig = {0};
-
-  /* USER CODE BEGIN ADC1_Init 1 */
-
-  /* USER CODE END ADC1_Init 1 */
-
-  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
-  */
-  hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
-  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc1.Init.ScanConvMode = DISABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
-  hadc1.Init.DiscontinuousConvMode = DISABLE;
-  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
-  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 1;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
-  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
-  if (HAL_ADC_Init(&hadc1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
-  */
-  sConfig.Channel = ADC_CHANNEL_0;
-  sConfig.Rank = 1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
-  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN ADC1_Init 2 */
-
-  /* USER CODE END ADC1_Init 2 */
-
-}
-
-/**
-  * @brief TIM2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM2_Init(void)
-{
-
-  /* USER CODE BEGIN TIM2_Init 0 */
-
-  /* USER CODE END TIM2_Init 0 */
-
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  /* USER CODE BEGIN TIM2_Init 1 */
-
-  /* USER CODE END TIM2_Init 1 */
-  htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 15;
-  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 19999;
-  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
-  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM2_Init 2 */
-
-  /* USER CODE END TIM2_Init 2 */
-
-}
-
-/**
-  * @brief USART2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART2_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART2_Init 0 */
-
-  /* USER CODE END USART2_Init 0 */
-
-  /* USER CODE BEGIN USART2_Init 1 */
-
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART2_Init 2 */
-
-  /* USER CODE END USART2_Init 2 */
-
-}
-
-/**
-  * @brief GPIO Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_GPIO_Init(void)
-{
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-  /* USER CODE BEGIN MX_GPIO_Init_1 */
-
-  /* USER CODE END MX_GPIO_Init_1 */
-
-  /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, LED_STATUS_PB0_Pin|LED_ARMED_PB1_Pin|PI_SLEEP_PB4_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pins : LEAK_PC13_Pin REED_SW_PC0_Pin */
-  GPIO_InitStruct.Pin = LEAK_PC13_Pin|REED_SW_PC0_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : LED_STATUS_PB0_Pin LED_ARMED_PB1_Pin PI_SLEEP_PB4_Pin */
-  GPIO_InitStruct.Pin = LED_STATUS_PB0_Pin|LED_ARMED_PB1_Pin|PI_SLEEP_PB4_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : IMU_SCL_PB8_Pin IMU_SDA_PB9_Pin */
-  GPIO_InitStruct.Pin = IMU_SCL_PB8_Pin|IMU_SDA_PB9_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  GPIO_InitStruct.Alternate = GPIO_AF4_I2C1;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /* USER CODE BEGIN MX_GPIO_Init_2 */
-
-  /* USER CODE END MX_GPIO_Init_2 */
+    /* USER CODE END 3 */
 }
 
 /* USER CODE BEGIN 4 */
 
-// ── printf UART redirect ─────────────────────────────────────
-// Retargets printf() to USART2 so debug messages appear on Mac terminal.
-// This is debug infrastructure only; control-path code remains bare metal.
-int _write(int file, char *ptr, int len)
+// ═══════════════════════════════════════════════════════════════
+// rcc_init
+// ───────────────────────────────────────────────────────────────
+// Purpose: enable clocks for all peripherals we use
+// Must run before any peripheral register is touched
+// ═══════════════════════════════════════════════════════════════
+static void rcc_init(void)
 {
-    (void)file;
-    HAL_UART_Transmit(&huart2, (uint8_t*)ptr, len, 100);
-    return len;
+    // ── AHB1 — GPIO clocks ───────────────────────────────────
+    RCC->AHB1ENR |= (1 << 0);   // 0000 0001 — GPIOA clock on
+    RCC->AHB1ENR |= (1 << 1);   // 0000 0010 — GPIOB clock on
+    RCC->AHB1ENR |= (1 << 2);   // 0000 0100 — GPIOC clock on
+
+    // ── APB1 — TIM2, UART2 clocks ────────────────────────────
+    RCC->APB1ENR |= (1 << 0);   // 0000 0001 — TIM2  clock on
+    RCC->APB1ENR |= (1 << 17);  // 0002 0000 — UART2 clock on
+
+    // ── APB2 — ADC1 clock ────────────────────────────────────
+    RCC->APB2ENR |= (1 << 8);   // 0000 0001 0000 0000 — ADC1 clock on
+
+    // ── TODO: APB1 — I2C1 clock ──────────────────────────────
+    // Stage 5: RCC->APB1ENR |= (1 << 21); // I2C1 clock on
+    // Ignore for now — continue
+    // ─────────────────────────────────────────────────────────
 }
 
+// ═══════════════════════════════════════════════════════════════
+// gpio_init
+// ───────────────────────────────────────────────────────────────
+// Purpose: configure all GPIO pins bare metal
+// RCC clocks must be enabled first via rcc_init()
+// ═══════════════════════════════════════════════════════════════
 static void gpio_init(void)
 {
     // ── PB0 — LED_STATUS — output ────────────────────────────
-    // pin 0 x 2 = bit 0 in MODER
+    // pin 0 x 2 = bits 1:0 in MODER
     GPIOB->MODER &= ~(MODER_MASK   << MODER_POS(LED_STATUS_PB0));
     //               1111 1100  ← bits 1:0 clear
     GPIOB->MODER |=  (MODER_OUTPUT << MODER_POS(LED_STATUS_PB0));
@@ -389,7 +190,7 @@ static void gpio_init(void)
     //               1111 1110  ← PB0 LOW = LED off at startup
 
     // ── PB1 — LED_ARMED — output ─────────────────────────────
-    // pin 1 x 2 = bit 2 in MODER
+    // pin 1 x 2 = bits 3:2 in MODER
     GPIOB->MODER &= ~(MODER_MASK   << MODER_POS(LED_ARMED_PB1));
     //               1111 0011  ← bits 3:2 clear
     GPIOB->MODER |=  (MODER_OUTPUT << MODER_POS(LED_ARMED_PB1));
@@ -398,97 +199,283 @@ static void gpio_init(void)
     //               1111 1101  ← PB1 LOW = LED off at startup
 
     // ── PB4 — PI_SLEEP — output ──────────────────────────────
-    // pin 4 x 2 = bit 8 in MODER
+    // pin 4 x 2 = bits 9:8 in MODER
     GPIOB->MODER &= ~(MODER_MASK   << MODER_POS(PI_SLEEP_PB4));
     //               1111 1111 0000 1111  ← bits 9:8 clear
     GPIOB->MODER |=  (MODER_OUTPUT << MODER_POS(PI_SLEEP_PB4));
     //               0000 0000 0001 0000  ← bits 9:8 = OUTPUT(01)
     GPIOB->ODR   &= ~(1 << PI_SLEEP_PB4);
-    //               0000 0000 1110 1111  ← PB4 LOW = Pi sleep at startup
+    //               0000 0000 1110 1111  ← PB4 LOW = Pi sleep
+
+    // ── PB8 — IMU_SCL — AF4 I2C1 open drain ─────────────────
+    // pin 8 x 2 = bits 17:16 in MODER
+    // pin 8 x 4 = bit 32 → uses AFR[1] bit 0
+    GPIOB->MODER  &= ~(MODER_MASK << MODER_POS(IMU_SCL_PB8));
+    //  1111 1111 1111 1111 0000 1111 1111 1111  ← bits 17:16 clear
+    GPIOB->MODER  |=  (MODER_AF   << MODER_POS(IMU_SCL_PB8));
+    //  0000 0000 0000 0000 0010 0000 0000 0000  ← bits 17:16 = AF(10)
+    GPIOB->OTYPER |=  (1 << IMU_SCL_PB8);
+    //  0000 0001 0000 0000  ← PB8 open drain — I2C requires this
+    GPIOB->AFR[1] &= ~(0xF << 0);   // clear bits 3:0 in AFR[1]
+    GPIOB->AFR[1] |=  (4   << 0);   // AF4 = I2C1
+    //  0000 0100  ← bits 3:0 = AF4
+
+    // ── PB9 — IMU_SDA — AF4 I2C1 open drain ─────────────────
+    // pin 9 x 2 = bits 19:18 in MODER
+    // pin 9 in AFR[1] = bits 7:4
+    GPIOB->MODER  &= ~(MODER_MASK << MODER_POS(IMU_SDA_PB9));
+    //  1111 1111 1111 1100 1111 1111 1111 1111  ← bits 19:18 clear
+    GPIOB->MODER  |=  (MODER_AF   << MODER_POS(IMU_SDA_PB9));
+    //  0000 0000 0000 0010 0000 0000 0000 0000  ← bits 19:18 = AF(10)
+    GPIOB->OTYPER |=  (1 << IMU_SDA_PB9);
+    //  0000 0010 0000 0000  ← PB9 open drain — I2C requires this
+    GPIOB->AFR[1] &= ~(0xF << 4);   // clear bits 7:4 in AFR[1]
+    GPIOB->AFR[1] |=  (4   << 4);   // AF4 = I2C1
+    //  0100 0000  ← bits 7:4 = AF4
 
     // ── PC0 — REED_SW — input with pull-up ───────────────────
-    // pin 0 x 2 = bit 0 in MODER and PUPDR
+    // pin 0 x 2 = bits 1:0 in MODER and PUPDR
     GPIOC->MODER &= ~(MODER_MASK << MODER_POS(REED_SW_PC0));
     //               1111 1100  ← bits 1:0 clear = INPUT(00)
     GPIOC->PUPDR &= ~(PUPDR_MASK << PUPDR_POS(REED_SW_PC0));
     GPIOC->PUPDR |=  (PUPDR_UP   << PUPDR_POS(REED_SW_PC0));
-    //               0000 0100  ← bits 1:0 = PULLUP(01)
+    //               0000 0001  ← bits 1:0 = PULLUP(01)
 
     // ── PC1 — ESP32_TRIG — input with pull-up ────────────────
-    // pin 1 x 2 = bit 2 in MODER and PUPDR
+    // pin 1 x 2 = bits 3:2 in MODER and PUPDR
     GPIOC->MODER &= ~(MODER_MASK << MODER_POS(ESP32_TRIG_PC1));
     //               1111 0011  ← bits 3:2 clear = INPUT(00)
     GPIOC->PUPDR &= ~(PUPDR_MASK << PUPDR_POS(ESP32_TRIG_PC1));
     GPIOC->PUPDR |=  (PUPDR_UP   << PUPDR_POS(ESP32_TRIG_PC1));
-    //               0000 0100  ← bits 3:2 = PULLUP(01) wait — 
-    //               0000 1000  ← bits 3:2 = PULLUP(01) correct
+    //               0000 0100  ← bits 3:2 = PULLUP(01)
 
     // ── PC13 — LEAK_PC13 — input with pull-up ────────────────
-    // pin 13 x 2 = bit 26 in MODER and PUPDR
+    // pin 13 x 2 = bits 27:26 in MODER and PUPDR
     GPIOC->MODER &= ~(MODER_MASK << MODER_POS(LEAK_PC13));
     //  1111 1111 0011 1111 1111 1111 1111 1111  ← bits 27:26 clear
     GPIOC->PUPDR &= ~(PUPDR_MASK << PUPDR_POS(LEAK_PC13));
     GPIOC->PUPDR |=  (PUPDR_UP   << PUPDR_POS(LEAK_PC13));
     //  0000 0000 0100 0000 0000 0000 0000 0000  ← bits 27:26 = PULLUP(01)
 
-    // ── TODO: PA0 — BATT_ADC — analog input ─────────────────
-    // Stage 4: configure ADC1 CH0 for battery voltage reading
-    // MODER = ANALOG(11) — no pull resistors for ADC
+    // ── TODO: PA0 — BATT_ADC — analog ────────────────────────
+    // Stage 4: MODER = ANALOG(11), no pull resistors
     // Ignore for now — continue
     // ─────────────────────────────────────────────────────────
 }
 
-// ── HAL_TIM_MspPostInit ──────────────────────────────────────
-// Required by MX_TIM2_Init — connects TIM2 to physical pins
-// PA5 = TIM2 CH1 AF1 — port  thruster
-// PA1 = TIM2 CH2 AF1 — stbd  thruster
-// Keep HAL here — called once at init, not in control path
-void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim)
+// ═══════════════════════════════════════════════════════════════
+// uart2_init
+// ───────────────────────────────────────────────────────────────
+// Purpose: configure UART2 bare metal — 115200 8N1
+// PA2 = TX AF7, PA3 = RX AF7
+// ═══════════════════════════════════════════════════════════════
+static void uart2_init(void)
 {
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    // ── PA2 — UART2 TX — AF7 ─────────────────────────────────
+    // pin 2 x 2 = bits 5:4 in MODER
+    // pin 2 x 4 = bits 11:8 in AFR[0]
+    GPIOA->MODER  &= ~(MODER_MASK << MODER_POS(UART_TX_PA2));
+    //               1111 1111 1100 1111  ← bits 5:4 clear
+    GPIOA->MODER  |=  (MODER_AF   << MODER_POS(UART_TX_PA2));
+    //               0000 0000 0010 0000  ← bits 5:4 = AF(10)
+    GPIOA->AFR[0] &= ~(0xF << AFR_POS(UART_TX_PA2));
+    GPIOA->AFR[0] |=  (7   << AFR_POS(UART_TX_PA2));
+    //               0111 0000 0000 0000  ← bits 11:8 = AF7 UART2
 
-    if (htim->Instance == TIM2)
+    // ── PA3 — UART2 RX — AF7 ─────────────────────────────────
+    // pin 3 x 2 = bits 7:6 in MODER
+    // pin 3 x 4 = bits 15:12 in AFR[0]
+    GPIOA->MODER  &= ~(MODER_MASK << MODER_POS(UART_RX_PA3));
+    //               1111 1111 0011 1111  ← bits 7:6 clear
+    GPIOA->MODER  |=  (MODER_AF   << MODER_POS(UART_RX_PA3));
+    //               0000 0000 1000 0000  ← bits 7:6 = AF(10)
+    GPIOA->AFR[0] &= ~(0xF << AFR_POS(UART_RX_PA3));
+    GPIOA->AFR[0] |=  (7   << AFR_POS(UART_RX_PA3));
+    //               0111 0000 0000 0000 0000  ← bits 15:12 = AF7 UART2
+
+    // ── UART2 register configuration ─────────────────────────
+    // STM32F4 USART BRR uses mantissa/fraction encoding when oversampling by 16.
+    // APB1 = 42MHz, baud = 115200
+    // USARTDIV = 42,000,000 / (16 x 115200) = 22.786
+    // Mantissa = 22 = 0x16
+    // Fraction = round(0.786 x 16) = 13 = 0xD
+    // BRR = (0x16 << 4) | 0xD = 0x016D
+    USART2->BRR = 0x016D;       // USART2 @ 42MHz APB1, 115200 baud, 8N1
+
+    // CR1: 8 bit word, no parity, enable TX + RX + UART
+    USART2->CR1 = (1 << 3) |    // 0000 1000 — TE: transmit enable
+                  (1 << 2) |    // 0000 0100 — RE: receive enable
+                  (1 << 13);    // 0010 0000 0000 0000 — UE: UART enable
+}
+
+// ═══════════════════════════════════════════════════════════════
+// tim2_pwm_gpio_init
+// ───────────────────────────────────────────────────────────────
+// Purpose: configure PA5 and PA1 as TIM2 AF1 outputs
+// Must run before tim2_pwm_mode_init
+// ═══════════════════════════════════════════════════════════════
+static void tim2_pwm_gpio_init(void)
+{
+    // ── PA5 — TIM2 CH1 — AF1 ─────────────────────────────────
+    // pin 5 x 2 = bits 11:10 in MODER
+    // pin 5 x 4 = bits 23:20 in AFR[0]
+    GPIOA->MODER  &= ~(MODER_MASK << MODER_POS(MOT_PORT_PA5));
+    //               1111 0011 1111 1111  ← bits 11:10 clear
+    GPIOA->MODER  |=  (MODER_AF   << MODER_POS(MOT_PORT_PA5));
+    //               0000 1000 0000 0000  ← bits 11:10 = AF(10)
+    GPIOA->OTYPER &= ~(1 << MOT_PORT_PA5);
+    //               1101 1111  ← push-pull output
+    GPIOA->PUPDR  &= ~(PUPDR_MASK << PUPDR_POS(MOT_PORT_PA5));
+    //               no pull resistors on PWM output
+    GPIOA->AFR[0] &= ~(0xF << AFR_POS(MOT_PORT_PA5));
+    GPIOA->AFR[0] |=  (1   << AFR_POS(MOT_PORT_PA5));
+    //               0001 0000 0000 0000 0000 0000  ← bits 23:20 = AF1 TIM2
+
+    // ── PA1 — TIM2 CH2 — AF1 ─────────────────────────────────
+    // pin 1 x 2 = bits 3:2 in MODER
+    // pin 1 x 4 = bits 7:4 in AFR[0]
+    GPIOA->MODER  &= ~(MODER_MASK << MODER_POS(MOT_STBD_PA1));
+    //               1111 1111 1111 0011  ← bits 3:2 clear
+    GPIOA->MODER  |=  (MODER_AF   << MODER_POS(MOT_STBD_PA1));
+    //               0000 0000 0000 1000  ← bits 3:2 = AF(10)
+    GPIOA->OTYPER &= ~(1 << MOT_STBD_PA1);
+    //               1111 1101  ← push-pull output
+    GPIOA->PUPDR  &= ~(PUPDR_MASK << PUPDR_POS(MOT_STBD_PA1));
+    //               no pull resistors on PWM output
+    GPIOA->AFR[0] &= ~(0xF << AFR_POS(MOT_STBD_PA1));
+    GPIOA->AFR[0] |=  (1   << AFR_POS(MOT_STBD_PA1));
+    //               0001 0000  ← bits 7:4 = AF1 TIM2
+}
+
+// ═══════════════════════════════════════════════════════════════
+// tim2_pwm_mode_init
+// ───────────────────────────────────────────────────────────────
+// Purpose: configure TIM2 for 50Hz PWM on CH1 and CH2
+// PSC=83 ARR=19999 at 84MHz APB1 timer clock
+// ═══════════════════════════════════════════════════════════════
+static void tim2_pwm_mode_init(void)
+{
+    // ── Timer clock and period ────────────────────────────────
+    // APB1 prescaler /2 → doubling → TIM2 clock = 84MHz
+    // PSC=83 → 84MHz/(83+1) = 1MHz → 1 tick = 1µs
+    // ARR=19999 → 20000 ticks = 20ms = 50Hz
+    TIM2->PSC  = 83;            // prescaler
+    TIM2->ARR  = 19999;         // period — 20ms = 50Hz
+
+    // ── Neutral pulse before enabling outputs ─────────────────
+    TIM2->CCR1 = PWM_NEUTRAL_US;    // port  → 1500µs
+    TIM2->CCR2 = PWM_NEUTRAL_US;    // stbd  → 1500µs
+
+    // ── CH1 — PWM mode 1 + output compare preload ────────────
+    // OC1M bits 6:4 = 110 = PWM mode 1
+    // pin HIGH while counter < CCR1, LOW when counter > CCR1
+    TIM2->CCMR1 &= ~(TIM_CCMR1_OC1M | TIM_CCMR1_OC1PE);
+    TIM2->CCMR1 |=  (TIM_CCMR1_OC1M_1 |    // 0010 0000 — OC1M bit 5
+                     TIM_CCMR1_OC1M_2 |    // 0100 0000 — OC1M bit 6
+                     TIM_CCMR1_OC1PE);     // 0000 1000 — preload enable
+
+    // ── CH2 — PWM mode 1 + output compare preload ────────────
+    TIM2->CCMR1 &= ~(TIM_CCMR1_OC2M | TIM_CCMR1_OC2PE);
+    TIM2->CCMR1 |=  (TIM_CCMR1_OC2M_1 |    // OC2M bit 13
+                     TIM_CCMR1_OC2M_2 |    // OC2M bit 14
+                     TIM_CCMR1_OC2PE);     // preload enable
+
+    // ── Active high polarity — clear polarity bits ────────────
+    TIM2->CCER &= ~(TIM_CCER_CC1P | TIM_CCER_CC2P);
+
+    // ── Enable CH1 + CH2 outputs ──────────────────────────────
+    TIM2->CCER |= (TIM_CCER_CC1E | TIM_CCER_CC2E);
+    //             0001 0001  ← bit0=CC1E, bit4=CC2E
+
+    // ── Auto-reload preload enable ────────────────────────────
+    TIM2->CR1  |= TIM_CR1_ARPE;    // 0000 0000 1000 0000
+
+    // ── Force register update ─────────────────────────────────
+    TIM2->EGR  |= TIM_EGR_UG;      // 0000 0001 — update generation
+
+    // ── Start counter ─────────────────────────────────────────
+    TIM2->CR1  |= TIM_CR1_CEN;     // 0000 0001 — counter enable
+}
+
+// ═══════════════════════════════════════════════════════════════
+// uart2_write  [PRIVATE]
+// ───────────────────────────────────────────────────────────────
+// Purpose: bare metal UART2 byte transmit
+// Polls TX empty flag before each byte — blocking but simple
+// ═══════════════════════════════════════════════════════════════
+static void uart2_write(uint8_t *data, uint16_t len)
+{
+    for (uint16_t i = 0; i < len; i++)
     {
-        __HAL_RCC_GPIOA_CLK_ENABLE();
-
-        // PA5 — TIM2 CH1 — port thruster — AF1
-        GPIO_InitStruct.Pin       = GPIO_PIN_5;
-        GPIO_InitStruct.Mode      = GPIO_MODE_AF_PP;
-        GPIO_InitStruct.Pull      = GPIO_NOPULL;
-        GPIO_InitStruct.Speed     = GPIO_SPEED_FREQ_LOW;
-        GPIO_InitStruct.Alternate = GPIO_AF1_TIM2;
-        HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-        // PA1 — TIM2 CH2 — stbd thruster — AF1
-        GPIO_InitStruct.Pin       = GPIO_PIN_1;
-        GPIO_InitStruct.Alternate = GPIO_AF1_TIM2;
-        HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+        while (!(USART2->SR & (1 << 7)));   // wait TXE — TX empty
+        //                      1000 0000  ← bit 7 = TXE flag
+        USART2->DR = data[i];               // write byte to data register
     }
 }
+
+// ── printf redirect to UART2 ─────────────────────────────────
+// Retargets printf() to UART2 bare metal transmit
+// Debug infrastructure only — not in control path
+int _write(int file, char *ptr, int len)
+{
+    (void)file;
+    uart2_write((uint8_t*)ptr, (uint16_t)len);
+    return len;
+}
+
 /* USER CODE END 4 */
 
-/**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
+// ═══════════════════════════════════════════════════════════════
+// SystemClock_Config — CubeMX generated — keep HAL here
+// ───────────────────────────────────────────────────────────────
+// PLL: HSI 16MHz → PLLM/8 → PLLN x168 → PLLP/4 → 84MHz
+// APB1 /2 = 42MHz peripheral, 84MHz timer (doubling applies)
+// APB2 /1 = 84MHz
+// ═══════════════════════════════════════════════════════════════
+void SystemClock_Config(void)
+{
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+    __HAL_RCC_PWR_CLK_ENABLE();
+    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE3);
+
+    RCC_OscInitStruct.OscillatorType      = RCC_OSCILLATORTYPE_HSI;
+    RCC_OscInitStruct.HSIState            = RCC_HSI_ON;
+    RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+    RCC_OscInitStruct.PLL.PLLState        = RCC_PLL_ON;
+    RCC_OscInitStruct.PLL.PLLSource       = RCC_PLLSOURCE_HSI;
+    RCC_OscInitStruct.PLL.PLLM            = 8;
+    RCC_OscInitStruct.PLL.PLLN            = 168;
+    RCC_OscInitStruct.PLL.PLLP            = RCC_PLLP_DIV4;
+    RCC_OscInitStruct.PLL.PLLQ            = 2;
+    RCC_OscInitStruct.PLL.PLLR            = 2;
+    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) Error_Handler();
+
+    RCC_ClkInitStruct.ClockType      = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+                                     | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+    RCC_ClkInitStruct.SYSCLKSource   = RCC_SYSCLKSOURCE_PLLCLK;
+    RCC_ClkInitStruct.AHBCLKDivider  = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK) Error_Handler();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Error_Handler
+// ═══════════════════════════════════════════════════════════════
 void Error_Handler(void)
 {
-  /* USER CODE BEGIN Error_Handler_Debug */
+    /* USER CODE BEGIN Error_Handler_Debug */
     __disable_irq();
     while (1) {}
-  /* USER CODE END Error_Handler_Debug */
+    /* USER CODE END Error_Handler_Debug */
 }
+
 #ifdef USE_FULL_ASSERT
-/**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
 void assert_failed(uint8_t *file, uint32_t line)
 {
-  /* USER CODE BEGIN 6 */
-  /* USER CODE END 6 */
+    /* USER CODE BEGIN 6 */
+    /* USER CODE END 6 */
 }
-#endif /* USE_FULL_ASSERT */
+#endif

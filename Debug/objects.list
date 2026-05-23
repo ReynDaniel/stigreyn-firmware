@@ -1,4 +1,6 @@
+"./Core/App/app.o"
 "./Core/Control/esc_pwm.o"
+"./Core/Safety/safety.o"
 "./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.o"
 "./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_adc.o"
 "./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_adc_ex.o"

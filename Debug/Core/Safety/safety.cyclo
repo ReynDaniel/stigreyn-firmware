@@ -1,0 +1,6 @@
+../Drivers/CMSIS/Include/core_cm4.h:1684:22:__NVIC_EnableIRQ	2
+../Drivers/CMSIS/Include/core_cm4.h:1814:22:__NVIC_SetPriority	2
+../Core/Safety/safety.c:36:6:safety_init	1
+../Core/Safety/safety.c:93:6:safety_update	7
+../Core/Safety/safety.c:146:6:safety_watchdog_kick	1
+../Core/Safety/safety.c:172:6:EXTI15_10_IRQHandler	2

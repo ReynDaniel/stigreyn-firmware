@@ -1,0 +1,4 @@
+../Core/App/app.c:31:6:app_init	1
+../Core/App/app.c:46:6:app_update	7
+../Core/App/app.c:123:6:app_fault	1
+../Core/App/app.c:139:6:app_reset	1
