@@ -9,17 +9,21 @@
 
 ## Project Status
 
-| Stage | Task | Status |
-|-------|------|--------|
-| 1 | GPIO — blink LED, toolchain verified | ✅ Complete |
-| 2 | TIM2 PWM — 50Hz ESC signal on PA5 + PA1 | ✅ Complete |
-| 3 | UART — debug output, switch to PLL 84MHz | 🔲 Planned |
-| 4 | Safety — watchdog, leak detector, failsafe | 🔲 Planned |
-| 5 | Sensors — IMU, Bar30 over I2C | 🔲 Planned |
-| 6 | Control modes — safe, test, RC, auto | 🔲 Planned |
-| 7 | Pi integration — UART protocol, sleep/wake | 🔲 Planned |
-| 8 | ESP32-CAM — anomaly trigger, burst imaging | 🔲 Planned |
-| 9 | Integration — full system bucket test | 🔲 Planned |
+| Stage | Task                                                                  | Status |
+|-------|-----------------------------------------------------------------------|--------|
+| 1 | GPIO — blink LED, toolchain verified                                      | ✅ Complete |
+| 2 | TIM2 PWM — 50Hz ESC signal on PA5 + PA1                                   | ✅ Complete |
+| 3 | UART — debug output, PLL 84MHz, 115200 baud                               | ✅ Complete |
+| 4a | Architecture — state machine, feature flags, safety framework            | ✅ Complete |
+| 4b | Safety validation — PA8/D7 leak ISR, fault latch, multi-fault logging    | ✅ Complete |
+| 5a | ESC arming — neutral hold, STATE_SAFE → STATE_ARMED transition            | 🔲 Planned |
+| 5b | Drive layer — throttle/steering mix, PWM limits, failsafe clamp           | 🔲 Planned |
+| 5c | Bench thruster validation — ESC + T200 test with external power           | 🔲 Planned |
+| 6 | Sensors — battery ADC, IMU, Bar30 over I2C                                | 🔲 Planned |
+| 7 | Control modes — safe, test, RC, auto                                      | 🔲 Planned |
+| 7 | Pi integration — UART protocol, sleep/wake                                | 🔲 Planned |
+| 8 | ESP32-CAM — anomaly trigger, burst imaging                                | 🔲 Planned |
+| 9 | Integration — full system bucket test                                     | 🔲 Planned |
 
 ---
 
@@ -87,7 +91,9 @@ to conserve power.
 | Task | Method | Priority |
 |------|--------|----------|
 | Thruster PWM control | TIM2 hardware PWM | Critical |
-| Leak detection | GPIO interrupt | Critical |
+| ESC arming sequence | Timed neutral PWM state machine | Critical |
+| Thruster mixing / limits | Firmware control layer | Critical |
+| Leak detection | EXTI8 interrupt (PA8 / D7) | Critical |
 | Watchdog / failsafe | IWDG hardware watchdog | Critical |
 | Battery monitoring | ADC1 CH0 | High |
 | IMU reading | I2C1 | High |
@@ -103,8 +109,9 @@ to conserve power.
 ## Passive Fail-Safe Design
 
 StigReyn is intentionally buoyancy-biased nose-up.
-On any failure — power loss, leak, watchdog timeout, low battery —
-thrusters return to neutral (1500µs) and the vehicle passively ascends.
+On any critical failure — leak detection, watchdog timeout, critical battery,
+or future hull-pressure fault — thrusters return to neutral (1500µs)
+and the vehicle passively ascends.
 
 ```
 Failure event detected
@@ -115,8 +122,11 @@ Passive buoyant ascent
         ↓
 Surface recovery
 ```
+Recoverable and warning faults are intentionally separated from automatic
+surface decisions. The firmware now distinguishes between:
 
-No active control required for basic recovery.
+- `STATE_FAULT`   → stop, assess, classify, remain safe
+- `STATE_SURFACE` → committed passive recovery ascent
 
 ---
 
@@ -138,6 +148,12 @@ Battery: 4S lithium 20Ah (12.0–16.8V)
 ESC signal: 50Hz, 1100–1900µs pulse width
 Counter-rotating props: starboard PWM inverted in firmware
 
+Future firmware stages will add:
+- ESC neutral-hold arming sequence
+- Software throttle/steering mixing
+- PWM rate limiting and clamp protection
+- Manual bench-test mode before autonomous control
+
 ---
 
 ## Pin Assignment — Confirmed
@@ -151,14 +167,17 @@ Counter-rotating props: starboard PWM inverted in firmware
 | PA3 | D0 | UART2 RX ← Pi | AF7 | 🔲 |
 | PA4 | A2 | Available | — | — |
 | PA5 | D13 | Port thruster PWM | TIM2 CH1 AF1 | ✅ |
-| PA6–PA12 | — | Available | — | — |
+| PA6 | D12 | Reserved SPI MISO | Spare / future SPI | 🔲 |
+| PA7 | D11 | Reserved SPI MOSI | Spare / future SPI | 🔲 |
+| PA8 | D7 | Leak detector input | EXTI8 active LOW | ✅ |
+| PA9–PA12 | — | Available | — | — |
 | PA13–PA15 | — | Reserved ST-LINK | — | — |
 
 ### Port B
 | Pin | Board Label | Assignment | Type | Verified |
 |-----|------------|-----------|------|----------|
-| PB0 | A3 | Status LED | Digital out | 🔲 |
-| PB1 | — | ESC armed LED | Digital out | 🔲 |
+| PB0 | A3* | Status LED | Digital out | ✅ |
+| PB1 | A4* | ESC armed LED | Digital out | 🔲 |
 | PB3 | — | Reserved ST-LINK SWO | — | — |
 | PB4 | D5 | Pi sleep/wake | Digital out | 🔲 |
 | PB8 | D15 | I2C1 SCL (IMU + Bar30) | AF4 | 🔲 |
@@ -169,9 +188,9 @@ Counter-rotating props: starboard PWM inverted in firmware
 ### Port C
 | Pin | Board Label | Assignment | Type | Verified |
 |-----|------------|-----------|------|----------|
-| PC0 | — | Reed switch input | Digital in | 🔲 |
-| PC1 | A4 | ESP32-CAM trigger | Digital in | 🔲 |
-| PC13 | — | Leak detector / USER button | Digital in | 🔲 |
+| PC0 | A5 | Reed switch input | Digital in | 🔲 |
+| PC1 | A4 | ESP32-CAM trigger | Digital in/out | 🔲 |
+| PC13 | USER BTN | Nucleo user button (unused by leak ISR) | Digital in | 🔲 |
 | PC14–PC15 | — | Reserved oscillator | — | — |
 
 **27 pins available for future expansion**
@@ -202,7 +221,8 @@ PSC = 83, ARR = 19999, TIM2 = 84MHz
 ## Engineering Notes
 
 ```
-Hardware verification was used to confirm actual STM32 timer pin mappings.
+Hardware-first validation was used throughout development to confirm
+actual STM32 timer mappings, EXTI routing, UART timing, and fault behaviour.
 
 PA6 was initially assumed to support TIM2_CH2; STM32 alternate-function
 verification and oscilloscope testing confirmed this was incorrect.
@@ -211,7 +231,24 @@ Final verified PWM mapping:
 PA5 = TIM2_CH1
 PA1 = TIM2_CH2
 
-Hardware-first validation was prioritised before ESC integration.
+Leak detection was later migrated from PC13 to PA8/D7 to better suit
+Arduino proto-shield integration and modular connector layout.
+
+The firmware architecture now separates:
+- STATE_FAULT   → immediate safe stop and fault assessment
+- STATE_SURFACE → committed passive recovery ascent
+
+Multi-fault tracking is supported through a bitmask-based fault system
+allowing multiple simultaneous faults while preserving a primary fault reason
+for logging and immediate response.
+
+The next development milestone is closed-loop thruster control validation.
+This includes ESC arming behaviour, software drive mixing, and bench-level
+thruster testing using externally powered ESCs before sealed integration.
+
+Internal hull pressure monitoring is planned as a future relative-pressure
+fault source using startup-sealed baseline comparison rather than only
+absolute atmospheric reference.
 ```
 
 ---
@@ -231,15 +268,23 @@ Pi cam captures + AI detection
 Result sent to STM32 via UART2
 Pi sleeps (PB4 LOW)
 
+PRE-DIVE ARMING:
+STATE_SAFE → timed neutral PWM hold
+ESCs complete startup beeps
+STATE_ARMED entered
+Manual bench-test mode permitted
+
 LOW BATTERY:
 STM32 ADC reads voltage drop
 STM32 warns Pi → Pi saves data
 STM32 sets PWM neutral → passive ascent
 
 LEAK DETECTED:
-PC13 interrupt fires immediately
+PA8 / D7 EXTI8 interrupt fires immediately
 PWM → 1500µs both thrusters
-Passive ascent
+STATE_FAULT entered
+Critical fault classified
+Passive ascent / recovery policy
 ```
 
 ---
@@ -253,8 +298,10 @@ stigreyn_firmware/
 │   ├── Config/
 │   │   └── pin_config.h    — all pin assignments
 │   ├── Control/
-│   │   ├── esc_pwm.c       — T200 thruster PWM driver
-│   │   └── esc_pwm.h
+│   │   ├── esc_pwm.c       — low-level PWM output driver
+│   │   ├── esc_pwm.h
+│   │   ├── drive.c         — throttle/steering mixing (planned)
+│   │   └── drive.h
 │   ├── Sensors/            — IMU, Bar30, battery ADC
 │   ├── Comms/              — UART to Pi protocol
 │   └── Safety/             — watchdog, leak, failsafe
@@ -273,8 +320,8 @@ stigreyn_firmware/
 - Config: STM32CubeMX (separate from IDE in 2.x)
 - Board: STM32 Nucleo-F446RE
 - MCU: STM32F446RET6 — ARM Cortex-M4, 180MHz capable
-- Current clock: HSI 16MHz (PLL upgrade at Stage 3)
-- Approach: CubeMX infrastructure + HAL peripheral initialisation + selective bare-metal register access
+- Current clock: PLL 84MHz system clock
+- Approach: CubeMX infrastructure + CMSIS/HAL startup + selective bare-metal register programming
 - Language: Embedded C (C99)
 
 ---
