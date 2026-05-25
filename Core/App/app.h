@@ -14,8 +14,9 @@
 //       ↓ "AUTO" command             │ "MANUAL" override
 //   STATE_AUTO  ────────────────────┘
 //
-//   ANY STATE → STATE_FAULT   (leak / battery / watchdog)
-//   STATE_FAULT → STATE_SURFACE (main loop transitions)
+//   ANY STATE → STATE_FAULT   (fault detected)
+//   STATE_FAULT = immediate safe state + assessment
+//   STATE_SURFACE = committed recovery/surfacing mode
 //   STATE_SURFACE → STATE_SAFE  (operator app_reset() only)
 //
 // ═══════════════════════════════════════════════════════════════
@@ -37,19 +38,62 @@ typedef enum
     STATE_SURFACE = 6   // recovery — ascending, pinger, logging [Stage 8]
 } auv_state_t;
 
+// ── FAULT CLASSIFICATION ─────────────────────────────────────
+// STATE_FAULT means something abnormal has been detected.
+// fault_reason explains what happened.
+// fault_severity controls whether the system attempts recovery or commits to surfacing.
+typedef enum
+{
+    FAULT_NONE = 0,
+
+    // Non-recoverable / mission-abort faults
+    FAULT_LEAK,
+    FAULT_BATT_CRIT,
+    FAULT_HULL_PRESSURE,
+
+    // Potentially recoverable faults
+    FAULT_BATT_WARN,
+    FAULT_I2C_LOCKUP,
+    FAULT_SENSOR_TIMEOUT,
+    FAULT_UART_TIMEOUT,
+    FAULT_WATCHDOG
+} fault_reason_t;
+
+// ── FAULT BITMASK HELPER ─────────────────────────────────────
+// Allows multiple active faults simultaneously.
+// Example:
+//     fault_active_mask |= FAULT_BIT(FAULT_LEAK);
+//
+// Bit positions match fault_reason_t enum values.
+#define FAULT_BIT(reason)   (1UL << (uint32_t)(reason))
+
+typedef enum
+{
+    SEVERITY_NONE = 0,
+    SEVERITY_WARN,
+    SEVERITY_RECOVERABLE,
+    SEVERITY_CRITICAL
+} fault_severity_t;
+
 // ── SHARED FAULT FLAGS ──────────────────────────────────────────
 // Defined in safety.c — written by ISR, read by app.c
 // volatile — ISR writes, main loop reads
 // latched  — only app_reset() clears them
-extern volatile auv_state_t auv_state;
-extern volatile uint8_t     leak_fault;
-extern volatile uint8_t     battery_fault;
-extern volatile uint8_t     watchdog_fault;
+// bitmask  — fault_active_mask can store multiple simultaneous faults
+extern volatile auv_state_t       auv_state;
+extern volatile fault_reason_t    fault_reason;
+extern volatile fault_severity_t  fault_severity;
+extern volatile uint32_t          fault_active_mask;
+
+extern volatile uint8_t leak_fault;
+extern volatile uint8_t battery_fault;
+extern volatile uint8_t watchdog_fault;
 
 // ── PUBLIC FUNCTIONS ────────────────────────────────────────────
 void app_init(void);     // BOOT → SAFE after all hardware init
 void app_update(void);   // call every main loop tick — 100Hz
-void app_fault(void);    // force fault from any context
+void app_fault(fault_reason_t reason,
+               fault_severity_t severity); // classify + handle fault
 void app_reset(void);    // operator reset — surface only
 
 #endif // APP_H

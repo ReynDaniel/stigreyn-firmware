@@ -1,10 +1,10 @@
 ../Src/main.c:76:5:main	8	static
 ../Src/main.c:155:13:rcc_init	4	static
 ../Src/main.c:181:13:gpio_init	4	static
-../Src/main.c:272:13:uart2_init	4	static
-../Src/main.c:317:13:tim2_pwm_gpio_init	4	static
-../Src/main.c:356:13:tim2_pwm_mode_init	4	static
-../Src/main.c:406:13:uart2_write	24	static
-../Src/main.c:419:5:_write	24	static
-../Src/main.c:435:6:SystemClock_Config	88	static
-../Src/main.c:467:6:Error_Handler	4	static,ignoring_inline_asm
+../Src/main.c:273:13:uart2_init	4	static
+../Src/main.c:318:13:tim2_pwm_gpio_init	4	static
+../Src/main.c:357:13:tim2_pwm_mode_init	4	static
+../Src/main.c:407:13:uart2_write	24	static
+../Src/main.c:420:5:_write	24	static
+../Src/main.c:436:6:SystemClock_Config	88	static
+../Src/main.c:468:6:Error_Handler	4	static,ignoring_inline_asm

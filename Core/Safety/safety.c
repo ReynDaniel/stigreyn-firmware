@@ -5,13 +5,14 @@
 // ═══════════════════════════════════════════════════════════════
 // FOCUSED RESPONSIBILITY:
 // safety_init()          — EXTI interrupt setup for leak detector
-// EXTI15_10_IRQHandler() — leak ISR — hardware first, flag second
+// EXTI9_5_IRQHandler()   — leak ISR — hardware first, flag second
 // safety_update()        — main loop fault management
 // safety_watchdog_kick() — watchdog stub (disabled in dev)
 //
 // State machine lives in app.c — not here
 // ═══════════════════════════════════════════════════════════════
 
+#include "feature_flags.h"
 #include "safety.h"
 #include "app.h"
 #include "esc_pwm.h"
@@ -29,58 +30,48 @@ volatile uint8_t watchdog_fault = 0;
 // ═══════════════════════════════════════════════════════════════
 // safety_init
 // ───────────────────────────────────────────────────────────────
-// Purpose: configure leak detector EXTI interrupt on PC13
+// Purpose: configure leak detector EXTI interrupt on PA8 / D7
 // Bare metal — SYSCFG, EXTI, NVIC direct register access
 // Call:    after rcc_init() and gpio_init() in main.c
 // ═══════════════════════════════════════════════════════════════
 void safety_init(void)
 {
+#if FEATURE_LEAK_ISR
     // ── Step 1: SYSCFG clock on ───────────────────────────────
-    // SYSCFG routes GPIO port to EXTI line
-    // Must enable before touching SYSCFG registers
-    RCC->APB2ENR |= (1 << 14);
-    //               0100 0000 0000 0000 — SYSCFG clock on
+    // SYSCFG routes GPIO port to EXTI line.
+    // Must enable before touching SYSCFG registers.
+    RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
 
-    // ── Step 2: connect PC13 → EXTI line 13 ──────────────────
-    // EXTICR[3] controls lines 12-15
-    // EXTI13 = bits 7:4
-    // 0=PA 1=PB 2=PC 3=PD
-    SYSCFG->EXTICR[3] &= ~(0xF << 4);  // clear bits 7:4
-    SYSCFG->EXTICR[3] |=  (2   << 4);  // 0010 = Port C
-    //                      ↑
-    //                  PC13 selected
+    // ── Step 2: connect PA8 → EXTI line 8 ────────────────────
+    // EXTICR[2] controls EXTI lines 8-11.
+    // EXTI8 = bits 3:0.
+    // 0=PA 1=PB 2=PC 3=PD.
+    // Port A = 0000, so clearing the bits selects PA8.
+    SYSCFG->EXTICR[2] &= ~(0xF << 0);  // EXTI8 = PA8
 
-    // ── Step 3: unmask EXTI13 ────────────────────────────────
-    EXTI->IMR |= (1 << 13);
-    //            0010 0000 0000 0000 — line 13 unmasked
+    // ── Step 3: unmask EXTI8 ─────────────────────────────────
+    EXTI->IMR |= (1 << LEAK_PA8);
 
     // ── Step 4: falling edge trigger ─────────────────────────
-    // PC13 pull-up → normally HIGH
-    // Water contact → pulled LOW → falling edge = leak detected
-    EXTI->FTSR |= (1 << 13);   // falling edge on line 13
-    EXTI->RTSR &= ~(1 << 13);  // no rising edge
+    // PA8/D7 pull-up → normally HIGH.
+    // Water contact → pulled LOW → falling edge = leak detected.
+    EXTI->FTSR |=  (1 << LEAK_PA8);  // falling edge on line 8
+    EXTI->RTSR &= ~(1 << LEAK_PA8);  // no rising edge
 
     // ── Step 5: clear pending before enabling ─────────────────
-    // Write-1-to-clear — STM32 specific register design
-    EXTI->PR = (1 << 13);
-    //          0010 0000 0000 0000 — clear pending bit 13
+    // Write-1-to-clear — STM32 specific register design.
+    EXTI->PR = (1 << LEAK_PA8);
 
     // ── Step 6: NVIC — enable and set priority ────────────────
-    // PC13 → EXTI line 13 → EXTI15_10 interrupt group
-    // Priority 2 — high but not highest
-    // Priority 0 reserved for future timing-critical interrupts
-    NVIC_SetPriority(EXTI15_10_IRQn, 2);
-    NVIC_EnableIRQ(EXTI15_10_IRQn);
+    // PA8 → EXTI line 8 → EXTI9_5 interrupt group.
+    // Priority 2 — high but not highest.
+    // Priority 0 reserved for future timing-critical interrupts.
+    NVIC_SetPriority(EXTI9_5_IRQn, 2);
+    NVIC_EnableIRQ(EXTI9_5_IRQn);
 
-    printf("Safety: leak detector armed PC13 EXTI13\r\n");
-
-    // ── WATCHDOG STATUS MESSAGE ───────────────────────────────
-#ifdef WATCHDOG_ENABLED
-    printf("Safety: watchdog ENABLED - %dms timeout\r\n",
-           WATCHDOG_TIMEOUT_MS);
+    printf("Safety: leak detector armed PA8/D7 EXTI8\r\n");
 #else
-    printf("Safety: watchdog DISABLED - development mode\r\n");
-    printf("Safety: define WATCHDOG_ENABLED to activate\r\n");
+    printf("WARNING: leak ISR disabled - feature_flags.h\r\n");
 #endif
 }
 
@@ -93,47 +84,56 @@ void safety_init(void)
 void safety_update(void)
 {
     // ── Leak fault ────────────────────────────────────────────
-    // Motors already neutralised by ISR
-    // Here: log, update LEDs, transition to SURFACE
-    if (leak_fault && auv_state != STATE_SURFACE)
+    // ISR already neutralised motors and latched leak_fault.
+    // Main loop classifies and logs the fault.
+    // Stage 4b validation target:
+    // leak fault -> STATE_FAULT -> motors neutral -> fault latched.
+    if (leak_fault && !(fault_active_mask & FAULT_BIT(FAULT_LEAK)))
     {
-        printf("FAULT: leak detected - passive ascent\r\n");
+        printf("FAULT: leak detected - classified critical\r\n");
 
         // visual indicators
         GPIOB->ODR &= ~(1 << LED_ARMED_PB1);  // armed LED off
         GPIOB->ODR |=  (1 << LED_STATUS_PB0); // status LED on
 
+        // Keep hardware safe. app_fault() also calls ESC_PWM_Failsafe().
+        app_fault(FAULT_LEAK, SEVERITY_CRITICAL);
+
         // ── TODO: wake Pi ─────────────────────────────────────
         // Stage 7: GPIOB->ODR |= (1 << PI_SLEEP_PB4);
         // Ignore for now — continue
         // ─────────────────────────────────────────────────────
-
-        auv_state = STATE_SURFACE;
     }
 
     // ── Battery fault ─────────────────────────────────────────
-    if (battery_fault && auv_state != STATE_FAULT
-                      && auv_state != STATE_SURFACE)
+    // Placeholder until PA0 battery ADC thresholds are implemented.
+    // Low battery warning may be recoverable; critical battery may require surfacing.
+    if (battery_fault && !(fault_active_mask & FAULT_BIT(FAULT_BATT_WARN)))
     {
-        printf("FAULT: low battery - safe ascent\r\n");
-        ESC_PWM_Failsafe();
-        auv_state = STATE_SURFACE;
+        printf("FAULT: battery warning placeholder - assessing\r\n");
+        app_fault(FAULT_BATT_WARN, SEVERITY_WARN);
 
         // ── TODO: staged battery response ─────────────────────
-        // Stage 4: WARN/CRIT/DEAD voltage thresholds
-        // Ignore for now — continue
+        // Stage 4b: WARN/CRIT/DEAD voltage thresholds
+        // WARN  -> reduce power / notify Pi / monitor
+        // CRIT  -> classify FAULT_BATT_CRIT + SEVERITY_CRITICAL
+        // DEAD  -> immediate failsafe + recovery behaviour
         // ─────────────────────────────────────────────────────
     }
 
-    // ── Surface state — keep motors neutral ───────────────────
-    if (auv_state == STATE_SURFACE)
+    // ── Fault state — keep motors neutral ─────────────────────
+    if (auv_state == STATE_FAULT || auv_state == STATE_SURFACE)
     {
         TIM2->CCR1 = PWM_NEUTRAL_US;
         TIM2->CCR2 = PWM_NEUTRAL_US;
+    }
 
+    // ── Surface state — future recovery behaviour ─────────────
+    if (auv_state == STATE_SURFACE)
+    {
         // ── TODO: pinger ──────────────────────────────────────
         // Stage 8: pulse acoustic pinger at 1Hz
-        // Ignore for now — continue
+        // Only enter STATE_SURFACE after recovery policy commits to surfacing.
         // ─────────────────────────────────────────────────────
     }
 }
@@ -141,11 +141,11 @@ void safety_update(void)
 // ═══════════════════════════════════════════════════════════════
 // safety_watchdog_kick
 // ───────────────────────────────────────────────────────────────
-// Disabled in development — enable via #define WATCHDOG_ENABLED
+// Disabled in development — enable via FEATURE_WATCHDOG in feature_flags.h
 // ═══════════════════════════════════════════════════════════════
 void safety_watchdog_kick(void)
 {
-#ifdef WATCHDOG_ENABLED
+#if FEATURE_WATCHDOG
     IWDG->KR = 0xAAAA;  // kick — reset watchdog counter
 #endif
 
@@ -158,20 +158,20 @@ void safety_watchdog_kick(void)
     //
     // WARNING: once IWDG started it cannot be stopped without reset
     // Only enable when main loop is stable and tested
-    // Define WATCHDOG_ENABLED in safety.h to activate
+    // Set FEATURE_WATCHDOG = 1 in feature_flags.h to activate
     // ─────────────────────────────────────────────────────────
 }
 
 // ═══════════════════════════════════════════════════════════════
-// EXTI15_10_IRQHandler — LEAK DETECTOR ISR
+// EXTI9_5_IRQHandler — LEAK DETECTOR ISR
 // ───────────────────────────────────────────────────────────────
-// Fires: PC13 goes LOW — water contact on leak detector
+// Fires: PA8 / D7 goes LOW — water contact on leak detector
 // ISR rule: hardware safe → flags → clear interrupt → exit
 // Nothing else — no printf, no HAL, no delays, no logic
 // ═══════════════════════════════════════════════════════════════
-void EXTI15_10_IRQHandler(void)
+void EXTI9_5_IRQHandler(void)
 {
-    if (EXTI->PR & (1 << 13))
+    if (EXTI->PR & (1 << LEAK_PA8))
     {
         // ── Hardware safe FIRST ───────────────────────────────
         // Direct register write — no function call overhead
@@ -181,12 +181,13 @@ void EXTI15_10_IRQHandler(void)
 
         // ── Latch fault — no recovery without operator reset ──
         leak_fault = 1;
+        // Immediate state only. Classification happens in safety_update().
         auv_state  = STATE_FAULT;
 
         // ── Clear interrupt pending flag ──────────────────────
         // Write-1-to-clear — must clear or ISR fires again
-        EXTI->PR = (1 << 13);
-        //          0010 0000 0000 0000 — clear bit 13
+        EXTI->PR = (1 << LEAK_PA8);
+        // clear EXTI8 pending bit
 
         // ── EXIT ──────────────────────────────────────────────
         // main loop handles everything else

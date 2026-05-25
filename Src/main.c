@@ -249,13 +249,14 @@ static void gpio_init(void)
     GPIOC->PUPDR |=  (PUPDR_UP   << PUPDR_POS(ESP32_TRIG_PC1));
     //               0000 0100  ← bits 3:2 = PULLUP(01)
 
-    // ── PC13 — LEAK_PC13 — input with pull-up ────────────────
-    // pin 13 x 2 = bits 27:26 in MODER and PUPDR
-    GPIOC->MODER &= ~(MODER_MASK << MODER_POS(LEAK_PC13));
-    //  1111 1111 0011 1111 1111 1111 1111 1111  ← bits 27:26 clear
-    GPIOC->PUPDR &= ~(PUPDR_MASK << PUPDR_POS(LEAK_PC13));
-    GPIOC->PUPDR |=  (PUPDR_UP   << PUPDR_POS(LEAK_PC13));
-    //  0000 0000 0100 0000 0000 0000 0000 0000  ← bits 27:26 = PULLUP(01)
+    // ── PA8 — LEAK_PA8 / D7 — input with pull-up ─────────────
+    // pin 8 x 2 = bits 17:16 in MODER and PUPDR
+    // D7 proto shield leak detector input — active LOW
+    GPIOA->MODER &= ~(MODER_MASK << MODER_POS(LEAK_PA8));
+    //  1111 1111 1111 1100 1111 1111 1111 1111  ← bits 17:16 clear = INPUT(00)
+    GPIOA->PUPDR &= ~(PUPDR_MASK << PUPDR_POS(LEAK_PA8));
+    GPIOA->PUPDR |=  (PUPDR_UP   << PUPDR_POS(LEAK_PA8));
+    //  0000 0000 0000 0001 0000 0000 0000 0000  ← bits 17:16 = PULLUP(01)
 
     // ── TODO: PA0 — BATT_ADC — analog ────────────────────────
     // Stage 4: MODER = ANALOG(11), no pull resistors

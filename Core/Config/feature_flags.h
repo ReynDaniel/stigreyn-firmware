@@ -18,7 +18,8 @@
 // Stage 1 ✅  GPIO, toolchain
 // Stage 2 ✅  TIM2 PWM — PA5 + PA1 confirmed on scope
 // Stage 3 ✅  UART debug — 115200 baud, PLL 84MHz
-// Stage 4 →   Safety — leak ISR, watchdog, battery ADC
+// Stage 4a ✅  Safety framework — state machine, feature flags
+// Stage 4b →   Safety validation — leak ISR, watchdog, battery ADC
 // Stage 5 →   Sensors — IMU, Bar30 I2C
 // Stage 6 →   Control modes — MANUAL command interface
 // Stage 7 →   Pi integration — UART2 protocol, sleep/wake
@@ -36,9 +37,9 @@
 #define FEATURE_HEARTBEAT_LED       1   // PB0 blink 500ms
 
 // ── STAGE 4 — SAFETY SYSTEM ─────────────────────────────────────
-#define FEATURE_LEAK_ISR            1   // leak detector EXTI PC13
+#define FEATURE_LEAK_ISR            1   // leak detector EXTI PA8 / D7
 //  ✓ enable now — hardware configured, ISR written
-//  ✓ pull-up on PC13, falling edge trigger
+//  ✓ pull-up on PA8 / D7, falling edge trigger
 //  ✓ latched fault, operator reset only
 
 #define FEATURE_WATCHDOG            0   // IWDG hardware watchdog
@@ -46,7 +47,7 @@
 //    ✓ main loop stable and tested
 //    ✓ all init functions completing reliably
 //    ✓ UART startup log printing cleanly every boot
-//    ✓ leak ISR tested and confirmed
+//    ✓ leak ISR tested and confirmed on PA8 / D7
 //  WARNING: once IWDG started it CANNOT be stopped without reset
 //  Enable by changing 0 → 1 AND adding safety_watchdog_init()
 

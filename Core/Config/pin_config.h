@@ -1,15 +1,16 @@
 // ═══════════════════════════════════════════════════════════════
 // pin_config.h
 // STIGREYN AUV — PIN ASSIGNMENT MAP
-// Board:  STM32F446RE Nucleo-F446RE
-// Clock:  16MHz HSI (Stage 1-2) → 84MHz PLL (Stage 3+)
+// Board:  STM32F446RE Nucleo-F446RE + ElectroCookie Proto Shield v3.3
+// Clock:  84MHz PLL
 // Author: Daniel Reynolds — REYN Consultancy
 // ═══════════════════════════════════════════════════════════════
+// ALL PINS USE ARDUINO HEADER — compatible with proto shield
 // POSITION RULES:
-// ODR/IDR  bit position = pin x 1  (1 bit  per pin)
-// MODER    bit position = pin x 2  (2 bits per pin)
-// PUPDR    bit position = pin x 2  (2 bits per pin)
-// AFR      bit position = pin x 4  (4 bits per pin)
+// ODR/IDR  bit position = pin x 1
+// MODER    bit position = pin x 2
+// PUPDR    bit position = pin x 2
+// AFR      bit position = pin x 4  (AFR[0]=pins 0-7, AFR[1]=pins 8-15)
 // ═══════════════════════════════════════════════════════════════
 
 #ifndef PIN_CONFIG_H
@@ -34,277 +35,312 @@
 #define AFR_POS(pin)    (pin * 4)   // 4 bits per pin
 
 // ═══════════════════════════════════════════════════════════════
-// CUBEMX USER LABELS — USE THESE EXACT SHORT NAMES
-// ───────────────────────────────────────────────────────────────
-// These labels are intentionally short and pin-specific.
-// Format: FUNCTION_SIDE_PORTPIN where useful.
-// Example: MOT_STBD_PA1 = motor, starboard side, physical pin PA1.
-//
-// PA0  → BATT_ADC_PA0      battery voltage ADC input
-// PA1  → MOT_STBD_PA1      starboard motor / thruster, TIM2 CH2
-// PA2  → UART_TX_PA2       UART2 TX to Raspberry Pi
-// PA3  → UART_RX_PA3       UART2 RX from Raspberry Pi
-// PA5  → MOT_PORT_PA5      port motor / thruster, TIM2 CH1
-// PB0  → LED_STATUS_PB0    external status LED
-// PB1  → LED_ARMED_PB1     ESC armed indicator LED
-// PB4  → PI_SLEEP_PB4      Pi sleep/wake control
-// PB8  → IMU_SCL_PB8       I2C1 SCL for IMU + Bar30
-// PB9  → IMU_SDA_PB9       I2C1 SDA for IMU + Bar30
-// PB10 → UART3_TX_PB10     spare UART3 TX
-// PB11 → UART3_RX_PB11     spare UART3 RX
-// PC0  → REED_SW_PC0       reed switch input
-// PC1  → ESP32_TRIG_PC1    ESP32-CAM anomaly trigger
-// PC13 → LEAK_PC13         leak detector input
-// ═══════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════
 // PORT A — REGISTER BIT MAP
 // bit: 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 09 08 07 06 05 04 03 02 01 00
 // pin: 15 15 14 14 13 13 12 12 11 11 10 10 09 09 08 08 07 07 06 06 05 05 04 04 03 03 02 02 01 01 00 00
 //
-// PIN   ODR    MODER     ASSIGNMENT
+// Arduino  Header  STM32   MODER     ASSIGNMENT
 // ───────────────────────────────────────────────────────────────
-//  0    bit0   1:0       battery voltage            ADC1 CH0
-//  1    bit1   3:2       TIM2 CH2 stbd thruster     AF1
-//  2    bit2   5:4       UART2 TX → Pi              AF7
-//  3    bit3   7:6       UART2 RX ← Pi              AF7
-//  4    bit4   9:8       — available
-//  5    bit5   11:10     TIM2 CH1 port thruster      AF1
-//  6    bit6   13:12     — available (was wrong TIM2 assignment)
-//  7    bit7   15:14     — available
-//  8    bit8   17:16     — available
-//  9    bit9   19:18     — available
-//  10   bit10  21:20     — available
-//  11   bit11  23:22     — available
-//  12   bit12  25:24     — available
-//  13   bit13  27:26     — reserved ST-LINK
-//  14   bit14  29:28     — reserved ST-LINK
-//  15   bit15  31:30     — reserved ST-LINK
+// A0       CN8     PA0     1:0       battery voltage ADC1 CH0
+// A1       CN8     PA1     3:2       TIM2 CH2 starboard ESC PWM   AF1
+// D1       CN9     PA2     5:4       UART2 TX → Pi/Mac             AF7
+// D0       CN9     PA3     7:6       UART2 RX ← Pi/Mac             AF7
+// A2       CN8     PA4     9:8       — available
+// D13      CN5     PA5     11:10     TIM2 CH1 port ESC PWM         AF1
+// D12      CN5     PA6     13:12     — reserve SPI MISO / spare input
+// D11      CN5     PA7     15:14     — reserve SPI MOSI / spare output
+// D7       CN9     PA8     17:16     leak detector EXTI8 input     EXTI9_5
+//          PA9     19:18     — available
+//          PA10    21:20     — available
+//          PA11    23:22     — available
+//          PA12    25:24     — available
+//          PA13    27:26     — reserved ST-LINK
+//          PA14    29:28     — reserved ST-LINK
+//          PA15    31:30     — reserved ST-LINK
 // ═══════════════════════════════════════════════════════════════
 
-#define BATT_ADC_PA0    0   // 1:0    ADC1 CH0  battery voltage monitor
-//  IDR READ:  0000 0000 0000 0000 0000 0000 0000 0001  ← PA0 analog
-// MODER CLR:  1111 1111 1111 1111 1111 1111 1111 1100  ← bits 1:0 clear
-// MODER SET:  0000 0000 0000 0000 0000 0000 0000 0011  ← bits 1:0 = ANALOG(11)
+#define BATT_ADC_PA0    0   // A0  — 1:0    ADC1 CH0  battery voltage
+//  IDR READ:  0000 0000 0000 0000 0000 0000 0000 0001
+// MODER CLR:  1111 1111 1111 1111 1111 1111 1111 1100
+// MODER SET:  0000 0000 0000 0000 0000 0000 0000 0011  ← ANALOG(11)
 
-#define MOT_STBD_PA1    1   // 3:2    AF1  TIM2 CH2 starboard thruster
-//  ODR SET:   0000 0000 0000 0000 0000 0000 0000 0010  ← PA1 HIGH
-// MODER CLR:  1111 1111 1111 1111 1111 1111 1111 0011  ← bits 3:2 clear
-// MODER SET:  0000 0000 0000 0000 0000 0000 0000 1000  ← bits 3:2 = AF(10)
+#define MOT_STBD_PA1    1   // A1  — 3:2    AF1  TIM2 CH2 stbd ESC
+//  ODR SET:   0000 0000 0000 0000 0000 0000 0000 0010
+// MODER CLR:  1111 1111 1111 1111 1111 1111 1111 0011
+// MODER SET:  0000 0000 0000 0000 0000 0000 0000 1000  ← AF(10)
 
-#define UART_TX_PA2     2   // 5:4    AF7  UART2 TX → Pi
-//  ODR SET:   0000 0000 0000 0000 0000 0000 0000 0100  ← PA2 HIGH
-// MODER CLR:  1111 1111 1111 1111 1111 1111 1100 1111  ← bits 5:4 clear
-// MODER SET:  0000 0000 0000 0000 0000 0000 0010 0000  ← bits 5:4 = AF(10)
+#define UART_TX_PA2     2   // D1  — 5:4    AF7  UART2 TX → Pi/Mac
+//  ODR SET:   0000 0000 0000 0000 0000 0000 0000 0100
+// MODER CLR:  1111 1111 1111 1111 1111 1111 1100 1111
+// MODER SET:  0000 0000 0000 0000 0000 0000 0010 0000  ← AF(10)
 
-#define UART_RX_PA3     3   // 7:6    AF7  UART2 RX ← Pi
-//  ODR SET:   0000 0000 0000 0000 0000 0000 0000 1000  ← PA3 HIGH
-// MODER CLR:  1111 1111 1111 1111 1111 1111 0011 1111  ← bits 7:6 clear
-// MODER SET:  0000 0000 0000 0000 0000 0000 1000 0000  ← bits 7:6 = AF(10)
+#define UART_RX_PA3     3   // D0  — 7:6    AF7  UART2 RX ← Pi/Mac
+//  ODR SET:   0000 0000 0000 0000 0000 0000 0000 1000
+// MODER CLR:  1111 1111 1111 1111 1111 1111 0011 1111
+// MODER SET:  0000 0000 0000 0000 0000 0000 1000 0000  ← AF(10)
 
-                            // 9:8    PA4  — available
+                            // A2  PA4  9:8  — available
 
-#define MOT_PORT_PA5    5   // 11:10  AF1  TIM2 CH1 port thruster
-//  ODR SET:   0000 0000 0000 0000 0000 0000 0010 0000  ← PA5 HIGH
-// MODER CLR:  1111 1111 1111 1111 1111 0011 1111 1111  ← bits 11:10 clear
-// MODER SET:  0000 0000 0000 0000 0000 1000 0000 0000  ← bits 11:10 = AF(10)
+#define MOT_PORT_PA5    5   // D13 — 11:10  AF1  TIM2 CH1 port ESC
+//  ODR SET:   0000 0000 0000 0000 0000 0000 0010 0000
+// MODER CLR:  1111 1111 1111 1111 1111 0011 1111 1111
+// MODER SET:  0000 0000 0000 0000 0000 1000 0000 0000  ← AF(10)
 
-                            // PA6    — available (NOT TIM2 capable)
-                            // PA7-PA12   — available
-                            // PA13-PA15  — reserved ST-LINK
+                            // D12 PA6 13:12 — reserve SPI MISO / spare input
+                            // D11 PA7 15:14 — reserve SPI MOSI / spare output
+
+#define LEAK_PA8        8   // D7  — 17:16  EXTI8 leak detector input
+//  IDR READ:  0000 0000 0000 0000 0000 0001 0000 0000  ← PA8 LOW = leak
+// MODER CLR:  1111 1111 1111 1111 0000 1111 1111 1111
+// MODER SET:  0000 0000 0000 0000 0000 0000 0000 0000  ← INPUT(00)
+// PUPDR SET:  0000 0000 0000 0000 0000 0001 0000 0000  ← PULLUP(01)
+// EXTI:       EXTI9_5_IRQn — ISR: EXTI9_5_IRQHandler()
+// SYSCFG:     EXTICR[2] bits 3:0 = 0000 (Port A)
+
+                            // PA9-PA12     — available
+                            // PA13-PA15    — reserved ST-LINK
 
 // ═══════════════════════════════════════════════════════════════
 // PORT B — REGISTER BIT MAP
 // bit: 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 09 08 07 06 05 04 03 02 01 00
 // pin: 15 15 14 14 13 13 12 12 11 11 10 10 09 09 08 08 07 07 06 06 05 05 04 04 03 03 02 02 01 01 00 00
 //
-// PIN   ODR    MODER     ASSIGNMENT
+// Arduino  Header  STM32   MODER     ASSIGNMENT
 // ───────────────────────────────────────────────────────────────
-//  0    bit0   1:0       status LED                 digital out
-//  1    bit1   3:2       ESC armed LED              digital out
-//  2    bit2   5:4       — available
-//  3    bit3   7:6       — reserved ST-LINK SWO
-//  4    bit4   9:8       Pi sleep/wake control      digital out
-//  5    bit5   11:10     — available
-//  6    bit6   13:12     — available
-//  7    bit7   15:14     — available
-//  8    bit8   17:16     I2C1 SCL IMU + Bar30       AF4
-//  9    bit9   19:18     I2C1 SDA IMU + Bar30       AF4
-//  10   bit10  21:20     UART3 TX spare/expansion   AF7
-//  11   bit11  23:22     UART3 RX spare/expansion   AF7
-//  12   bit12  25:24     — available
-//  13   bit13  27:26     — available
-//  14   bit14  29:28     — available
-//  15   bit15  31:30     — available
+// A3       CN8     PB0     1:0       status LED output
+// —        —       PB1     3:2       ESC armed LED output
+// —        —       PB2     5:4       — available
+// —        —       PB3     7:6       — reserved ST-LINK SWO
+// D5       CN9     PB4     9:8       Pi sleep/wake control output
+// —        —       PB5     11:10     — available
+// D10      CN5     PB6     13:12     — reserve SPI CS / spare output
+// —        —       PB7     15:14     — available
+// D15      CN5     PB8     17:16     I2C1 SCL IMU + Bar30          AF4
+// D14      CN5     PB9     19:18     I2C1 SDA IMU + Bar30          AF4
+// D6       CN9     PB10    21:20     — reserve spare PWM/UART3 TX  AF7
+// —        —       PB11    23:22     — reserve spare UART3 RX      AF7
+// —        —       PB12    25:24     — available / not Arduino SPI on this shield map
+// —        —       PB13    27:26     — available / not Arduino D13 on this shield map
+// —        —       PB14    29:28     — available / not Arduino D12 on this shield map
+// —        —       PB15    31:30     — available / not Arduino D11 on this shield map
 // ═══════════════════════════════════════════════════════════════
 
-#define LED_STATUS_PB0  0   // 1:0        status LED output
-//  ODR SET:   0000 0000 0000 0000 0000 0000 0000 0001  ← PB0 HIGH = on
-// MODER CLR:  1111 1111 1111 1111 1111 1111 1111 1100  ← bits 1:0 clear
-// MODER SET:  0000 0000 0000 0000 0000 0000 0000 0001  ← bits 1:0 = OUTPUT(01)
+#define LED_STATUS_PB0  0   // A3  — 1:0    status LED output
+//  ODR SET:   0000 0000 0000 0000 0000 0000 0000 0001
+// MODER CLR:  1111 1111 1111 1111 1111 1111 1111 1100
+// MODER SET:  0000 0000 0000 0000 0000 0000 0000 0001  ← OUTPUT(01)
 
-#define LED_ARMED_PB1   1   // 3:2        ESC armed LED output
-//  ODR SET:   0000 0000 0000 0000 0000 0000 0000 0010  ← PB1 HIGH = armed
-// MODER CLR:  1111 1111 1111 1111 1111 1111 1111 0011  ← bits 3:2 clear
-// MODER SET:  0000 0000 0000 0000 0000 0000 0000 0100  ← bits 3:2 = OUTPUT(01)
+#define LED_ARMED_PB1   1   // —   — 3:2    ESC armed LED output
+//  ODR SET:   0000 0000 0000 0000 0000 0000 0000 0010
+// MODER CLR:  1111 1111 1111 1111 1111 1111 1111 0011
+// MODER SET:  0000 0000 0000 0000 0000 0000 0000 0100  ← OUTPUT(01)
 
-                            // PB2        — available
-                            // PB3        — reserved ST-LINK SWO
+                            // PB2  5:4     — available
+                            // PB3  7:6     — reserved ST-LINK SWO
 
-#define PI_SLEEP_PB4    4   // 9:8        Pi sleep/wake control output
-//  ODR SET:   0000 0000 0000 0000 0000 0000 0001 0000  ← PB4 HIGH = Pi wake
-//  ODR CLR:   0000 0000 0000 0000 0000 0000 0000 0000  ← PB4 LOW  = Pi sleep
-// MODER CLR:  1111 1111 1111 1111 1111 1111 0000 1111  ← bits 9:8 clear
-// MODER SET:  0000 0000 0000 0000 0000 0000 0001 0000  ← bits 9:8 = OUTPUT(01)
+#define PI_SLEEP_PB4    4   // D5  — 9:8    Pi sleep/wake output
+//  ODR SET:   0000 0000 0000 0000 0000 0000 0001 0000
+// MODER CLR:  1111 1111 1111 1111 1111 1111 0000 1111
+// MODER SET:  0000 0000 0000 0000 0000 0000 0001 0000  ← OUTPUT(01)
 
-                            // PB5-PB7    — available
+                            // PB5          — available
+                            // D10 PB6      — reserve SPI CS / spare output
+                            // PB7          — available
 
-#define IMU_SCL_PB8     8   // 17:16  AF4  I2C1 SCL — IMU + Bar30
-//  ODR SET:   0000 0000 0000 0000 0000 0001 0000 0000  ← PB8 HIGH
-// MODER CLR:  1111 1111 1111 1111 0000 1111 1111 1111  ← bits 17:16 clear
-// MODER SET:  0000 0000 0000 0000 0010 0000 0000 0000  ← bits 17:16 = AF(10)
+#define IMU_SCL_PB8     8   // D15 — 17:16  AF4  I2C1 SCL IMU+Bar30
+//  ODR SET:   0000 0000 0000 0000 0000 0001 0000 0000
+// MODER CLR:  1111 1111 1111 1111 0000 1111 1111 1111
+// MODER SET:  0000 0000 0000 0000 0010 0000 0000 0000  ← AF(10)
 
-#define IMU_SDA_PB9     9   // 19:18  AF4  I2C1 SDA — IMU + Bar30
-//  ODR SET:   0000 0000 0000 0000 0000 0010 0000 0000  ← PB9 HIGH
-// MODER CLR:  1111 1111 1111 1100 1111 1111 1111 1111  ← bits 19:18 clear
-// MODER SET:  0000 0000 0000 0010 0000 0000 0000 0000  ← bits 19:18 = AF(10)
+#define IMU_SDA_PB9     9   // D14 — 19:18  AF4  I2C1 SDA IMU+Bar30
+//  ODR SET:   0000 0000 0000 0000 0000 0010 0000 0000
+// MODER CLR:  1111 1111 1111 1100 1111 1111 1111 1111
+// MODER SET:  0000 0000 0000 0010 0000 0000 0000 0000  ← AF(10)
 
-#define UART3_TX_PB10  10   // 21:20  AF7  UART3 TX — spare/expansion
-//  ODR SET:   0000 0000 0000 0000 0000 0100 0000 0000  ← PB10 HIGH
-// MODER CLR:  1111 1111 1111 1111 0011 1111 1111 1111  ← bits 21:20 clear
-// MODER SET:  0000 0000 0000 0000 1000 0000 0000 0000  ← bits 21:20 = AF(10)
+#define UART3_TX_PB10  10   // D6  — 21:20  AF7  spare UART3 TX
+#define UART3_RX_PB11  11   //      — 23:22  AF7  spare UART3 RX
 
-#define UART3_RX_PB11  11   // 23:22  AF7  UART3 RX — spare/expansion
-//  ODR SET:   0000 0000 0000 0000 0000 1000 0000 0000  ← PB11 HIGH
-// MODER CLR:  1111 1111 1111 0011 1111 1111 1111 1111  ← bits 23:22 clear
-// MODER SET:  0000 0000 0000 1000 0000 0000 0000 0000  ← bits 23:22 = AF(10)
-
-                            // PB12-PB15  — available
+                            // PB12-PB15    — available / Morpho-only for this layout
+                            // Arduino SPI-style reserves use:
+                            // D10 PB6      — CS reserve
+                            // D11 PA7      — MOSI reserve
+                            // D12 PA6      — MISO reserve
+                            // D13 PA5      — SCK label, currently port ESC PWM
 
 // ═══════════════════════════════════════════════════════════════
 // PORT C — REGISTER BIT MAP
 // bit: 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 09 08 07 06 05 04 03 02 01 00
 // pin: 15 15 14 14 13 13 12 12 11 11 10 10 09 09 08 08 07 07 06 06 05 05 04 04 03 03 02 02 01 01 00 00
 //
-// PIN   ODR    MODER     ASSIGNMENT
+// Arduino  Header  STM32   MODER     ASSIGNMENT
 // ───────────────────────────────────────────────────────────────
-//  0    bit0   1:0       reed switch input           digital in
-//  1    bit1   3:2       ESP32-CAM anomaly trigger   digital in
-//  2    bit2   5:4       — available
-//  3    bit3   7:6       — available
-//  4    bit4   9:8       — available
-//  5    bit5   11:10     — available
-//  6    bit6   13:12     — available
-//  7    bit7   15:14     — available
-//  8    bit8   17:16     — available
-//  9    bit9   19:18     — available
-//  10   bit10  21:20     — available
-//  11   bit11  23:22     — available
-//  12   bit12  25:24     — available
-//  13   bit13  27:26     leak detector / USER button digital in
-//  14   bit14  29:28     — reserved oscillator
-//  15   bit15  31:30     — reserved oscillator
+// A5       CN8     PC0     1:0       reed switch / magnetic arm input
+// A4       CN8     PC1     3:2       ESP32-CAM anomaly trigger input
+// —        —       PC2     5:4       — available
+// —        —       PC3     7:6       — available
+// —        —       PC4     9:8       — available
+// —        —       PC5     11:10     — available
+//          PC6-PC12          — available
+//          PC13    27:26     — USER button (was leak, now moved to PA8)
+//          PC14    29:28     — reserved oscillator
+//          PC15    31:30     — reserved oscillator
 // ═══════════════════════════════════════════════════════════════
 
-#define REED_SW_PC0     0   // 1:0        reed switch — wake + mode cycle
-//  IDR READ:  0000 0000 0000 0000 0000 0000 0000 0001  ← PC0 HIGH = triggered
-// MODER CLR:  1111 1111 1111 1111 1111 1111 1111 1100  ← bits 1:0 clear
-// MODER SET:  0000 0000 0000 0000 0000 0000 0000 0000  ← bits 1:0 = INPUT(00)
-// PUPDR SET:  0000 0000 0000 0000 0000 0000 0000 0100  ← bits 1:0 = pullup(01)
+#define REED_SW_PC0     0   // A5  — 1:0    reed switch input
+//  IDR READ:  0000 0000 0000 0000 0000 0000 0000 0001
+// MODER CLR:  1111 1111 1111 1111 1111 1111 1111 1100
+// MODER SET:  0000 0000 0000 0000 0000 0000 0000 0000  ← INPUT(00)
+// PUPDR SET:  0000 0000 0000 0000 0000 0000 0000 0100  ← PULLUP(01)
 
-#define ESP32_TRIG_PC1  1   // 3:2        ESP32-CAM anomaly trigger
-//  IDR READ:  0000 0000 0000 0000 0000 0000 0000 0010  ← PC1 HIGH = anomaly
-// MODER CLR:  1111 1111 1111 1111 1111 1111 1111 0011  ← bits 3:2 clear
-// MODER SET:  0000 0000 0000 0000 0000 0000 0000 0000  ← bits 3:2 = INPUT(00)
-// PUPDR SET:  0000 0000 0000 0000 0000 0000 0000 0100  ← bits 3:2 = pullup(01)
+#define ESP32_TRIG_PC1  1   // A4  — 3:2    ESP32-CAM trigger input
+//  IDR READ:  0000 0000 0000 0000 0000 0000 0000 0010
+// MODER CLR:  1111 1111 1111 1111 1111 1111 1111 0011
+// MODER SET:  0000 0000 0000 0000 0000 0000 0000 0000  ← INPUT(00)
+// PUPDR SET:  0000 0000 0000 0000 0000 0000 0000 0100  ← PULLUP(01) wait
+//             0000 0000 0000 0000 0000 0000 0000 1000  ← PULLUP(01) correct
 
-                            // PC2-PC12   — available
+                            // PC2-PC12     — available
 
-#define LEAK_PC13      13   // 27:26       leak detector input
-//  IDR READ:  0000 0000 0000 0010 0000 0000 0000 0000  ← PC13 HIGH = leak
-// MODER CLR:  1111 1111 0011 1111 1111 1111 1111 1111  ← bits 27:26 clear
-// MODER SET:  0000 0000 0000 0000 0000 0000 0000 0000  ← bits 27:26 = INPUT(00)
-// PUPDR SET:  0000 0000 0100 0000 0000 0000 0000 0000  ← bits 27:26 = pullup(01)
-
-                            // PC14-PC15  — reserved oscillator
+                            // PC13         — USER button only
+                            //                leak moved to PA8/D7
+                            // PC14-PC15    — reserved oscillator
 
 // ═══════════════════════════════════════════════════════════════
-// AVAILABLE PINS — FREE FOR FUTURE EXPANSION
+// ARDUINO HEADER QUICK REFERENCE — proto shield layout
 // ───────────────────────────────────────────────────────────────
-// PORT A:  PA4, PA6, PA7, PA8, PA9, PA10, PA11, PA12   (8 pins)
-// PORT B:  PB2, PB5, PB6, PB7, PB12, PB13, PB14, PB15 (8 pins)
-// PORT C:  PC2-PC12                                    (11 pins)
-// TOTAL:   27 pins available
+// D0   CN9  PA3   UART2 RX
+// D1   CN9  PA2   UART2 TX
+// D2   CN9  —     spare interrupt input (reserve)
+// D3   CN9  —     spare interrupt / pulse (reserve)
+// D4   CN9  —     spare digital output (reserve)
+// D5   CN9  PB4   Pi sleep/wake
+// D6   CN9  PB10  spare PWM / UART3 TX (reserve)
+// D7   CN9  PA8   leak detector EXTI8
+// D8   CN5  —     pinger output (reserve Stage 8)
+// D9   CN5  —     spare PWM (reserve)
+// D10  CN5  PB6   SPI CS reserve / spare output
+// D11  CN5  PA7   SPI MOSI reserve / spare output
+// D12  CN5  PA6   SPI MISO reserve / spare input
+// D13  CN5  PA5   port ESC PWM TIM2 CH1 / Arduino SCK label
+// D14  CN5  PB9   I2C1 SDA
+// D15  CN5  PB8   I2C1 SCL
+// A0   CN8  PA0   battery ADC
+// A1   CN8  PA1   stbd ESC PWM TIM2 CH2
+// A2   CN8  PA4   spare analog
+// A3   CN8  PB0   status LED
+// A4   CN8  PC1   ESP32-CAM trigger
+// A5   CN8  PC0   reed switch
+// ═══════════════════════════════════════════════════════════════
+
+// NOTE:
+// Arduino header group names are included for proto shield layout:
+// CN8 = analog header A0-A5
+// CN9 = digital header D0-D7
+// CN5 = digital header D8-D15 / I2C/SPI area
+// For soldering, verify the physical silkscreen on the Nucleo and proto shield.
+// Some STM32 pins exist on Morpho headers only and are marked as "—" here.
 // ═══════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════
 // ALTERNATE FUNCTION QUICK REFERENCE
 // ───────────────────────────────────────────────────────────────
-// AF1  TIM2    MOT_PORT_PA5   MOT_STBD_PA1
-// AF4  I2C1    IMU_SCL_PB8    IMU_SDA_PB9
-// AF7  UART2   UART_TX_PA2    UART_RX_PA3
-// AF7  UART3   UART3_TX_PB10  UART3_RX_PB11
+// AF1  TIM2    MOT_PORT_PA5(D13)  MOT_STBD_PA1(A1)
+// AF4  I2C1    IMU_SCL_PB8(D15)   IMU_SDA_PB9(D14)
+// AF7  UART2   UART_TX_PA2(D1)    UART_RX_PA3(D0)
+// AF7  UART3   UART3_TX_PB10(D6)  UART3_RX_PB11
 //
-// TIM2 CHANNEL MAP — CONFIRMED BY HARDWARE TEST:
-// TIM2_CH1 = PA0, PA5, PA15  (AF1) — using PA5
-// TIM2_CH2 = PA1, PB3        (AF1) — using PA1
-// NOTE: PA6 does NOT support TIM2 — common misconception
+// Arduino SPI header reserve note:
+// D13 = PA5 and is currently used for port ESC PWM, despite the Arduino SCK label.
+// D11/D12/D10 are reserved as PA7/PA6/PB6 for proto-shield planning only.
+// Confirm final SPI peripheral choice before implementing SPI firmware.
+//
+// EXTI INTERRUPT REFERENCE
+// LEAK_PA8(D7) → EXTI line 8 → EXTI9_5_IRQn
+//   SYSCFG->EXTICR[2] bits 3:0 = 0000 (Port A)
+//   ISR: void EXTI9_5_IRQHandler(void)
 // ═══════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════
 // T200 PWM OPERATING REGIONS — 4S BATTERY (12.0-16.8V)
 // ───────────────────────────────────────────────────────────────
-#define PWM_NEUTRAL      1500   // stop      — failsafe default
+#define PWM_NEUTRAL_US   1500   // stop      — failsafe default
 #define PWM_DEADBAND_LO  1460   // deadband low
 #define PWM_DEADBAND_HI  1540   // deadband high
 #define PWM_CRUISE_LO    1560   // cruise start
 #define PWM_CRUISE_HI    1620   // cruise end
 #define PWM_DIVE_LO      1620   // dive start
 #define PWM_DIVE_HI      1680   // dive end
-#define PWM_HIGH_PWR_HI  1800   // high power limit
+#define PWM_HIGH_PWR_HI  1800   // high power limit — short only
 #define PWM_MAX_FWD      1900   // absolute maximum forward
 #define PWM_MAX_REV      1100   // absolute maximum reverse
 // ═══════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════
-// TIMER CONFIGURATION — TIM2 PWM 50Hz
+// TIMER CONFIGURATION — TIM2 PWM 50Hz at 84MHz PLL
 // ───────────────────────────────────────────────────────────────
-// Stage 1-2: HSI 16MHz clock
-//   APB1 prescaler = /1 → NO doubling
-//   TIM2 clock = 16MHz
-//   PSC = 15  → 16MHz / (15+1) = 1MHz
-//   ARR = 19999 → 20000 ticks = 20ms = 50Hz
-//
-// Stage 3+: PLL 84MHz clock
-//   APB1 prescaler = /2 → doubling applies
-//   TIM2 clock = 84MHz
-//   PSC = 83  → 84MHz / (83+1) = 1MHz
-//   ARR = 19999 → unchanged
-//
+// APB1 /2 = 42MHz → timer doubling → TIM2 = 84MHz
+// PSC=83 → 84MHz/(83+1) = 1MHz → 1 tick = 1µs
+// ARR=19999 → 20000 ticks = 20ms = 50Hz
 // CCR value = pulse width in microseconds directly
 // ═══════════════════════════════════════════════════════════════
-#define TIM_PRESCALER_HSI   15      // 16MHz HSI — Stage 1-2
-#define TIM_PRESCALER_PLL   83      // 84MHz PLL — Stage 3+
-#define TIM_PERIOD          19999   // 20ms = 50Hz (both clock configs)
+#define TIM_PRESCALER   83      // 84MHz PLL
+#define TIM_PERIOD      19999   // 20ms = 50Hz
 // ═══════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════
-// SYSTEM WAKE / SLEEP SEQUENCE
+// MOTOR COMMAND LIMITS
 // ───────────────────────────────────────────────────────────────
-// WAKE:
-// 1. Reed switch  → PC0 interrupt → STM32 wakes
-// 2. STM32        → PB4 HIGH      → Pi wakes
-// 3. Pi           → WiFi/BLE on   → config available
-// 4. Pi           → pre-launch check via UART2
-// 5. Pi           → GO/NO-GO      → STM32 begins mission
-//
-// DURING MISSION:
-// 6. ESP32-CAM    → PC1 interrupt → STM32 wakes Pi
-// 7. Pi cam       → AI detection  → result via UART2
-// 8. Pi           → PB4 LOW       → Pi sleeps
-//
-// FAILSAFE:
-// 9. Leak/battery → PWM neutral 1500µs → passive ascent
+#define MOTOR_CMD_MAX    100    // full forward
+#define MOTOR_CMD_MIN   -100    // full reverse
+#define MOTOR_CMD_STOP    0     // neutral
 // ═══════════════════════════════════════════════════════════════
 
 #endif // PIN_CONFIG_H
+// ═══════════════════════════════════════════════════════════════
+// STIGREYN AUV — PIN QUICK REFERENCE
+// STM32F446RE NUCLEO + Arduino Proto Shield
+// Source of truth — update this table FIRST before firmware
+// ═══════════════════════════════════════════════════════════════
+
+/*
+┌─────────┬──────┬────────┬─────────────────────────────────────┐
+│ Arduino │ MCU  │ Header │ Function                            │
+├─────────┼──────┼────────┼─────────────────────────────────────┤
+│ D0      │ PA3  │ CN9    │ UART2_RX — debug RX / Pi RX         │
+│ D1      │ PA2  │ CN9    │ UART2_TX — debug TX / Pi TX         │
+│ D5      │ PB4  │ CN9    │ PI_SLEEP — Pi wake/sleep GPIO       │
+│ D6      │ PB10 │ CN9    │ reserve UART3_TX / spare output     │
+│ D7      │ PA8  │ CN9    │ LEAK detector — EXTI8 active LOW    │
+│ D10     │ PB6  │ CN5    │ reserve SPI CS / spare output       │
+│ D11     │ PA7  │ CN5    │ reserve SPI MOSI / spare output     │
+│ D12     │ PA6  │ CN5    │ reserve SPI MISO / spare input      │
+│ D13     │ PA5  │ CN5    │ MOT_PORT — ESC PWM TIM2_CH1         │
+│         │      │        │ (Arduino SCK label reused)           │
+├─────────┼──────┼────────┼─────────────────────────────────────┤
+│ A0      │ PA0  │ CN8    │ BATT_ADC — battery voltage divider  │
+│ A1      │ PA1  │ CN8    │ MOT_STBD — ESC PWM TIM2_CH2         │
+│ A4      │ PC1  │ CN8    │ ESP32 trigger / spare GPIO          │
+│ A5      │ PC0  │ CN8    │ REED switch input                   │
+├─────────┼──────┼────────┼─────────────────────────────────────┤
+│ D14 SDA │ PB9  │ CN5    │ I2C1 SDA — IMU / Bar30              │
+│ D15 SCL │ PB8  │ CN5    │ I2C1 SCL — IMU / Bar30              │
+└─────────┴──────┴────────┴─────────────────────────────────────┘
+*/
+
+// ── ACTIVE TIMERS / PERIPHERALS ───────────────────────────────
+//
+// TIM2 CH1 → PA5 / D13 → Port ESC PWM
+// TIM2 CH2 → PA1 / A1  → Starboard ESC PWM
+//
+// USART2 TX → PA2 / D1
+// USART2 RX → PA3 / D0
+//
+// EXTI8 → PA8 / D7 leak detector
+//
+// I2C1 SDA → PB9  / D14
+// I2C1 SCL → PB8  / D15
+//
+// PLL SYSCLK = 84 MHz
+// USART2->BRR = 0x016D for 115200 baud @ APB1 42MHz
+//
+// ═══════════════════════════════════════════════════════════════

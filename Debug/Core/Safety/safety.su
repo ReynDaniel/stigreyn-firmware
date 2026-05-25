@@ -1,6 +1,6 @@
 ../Drivers/CMSIS/Include/core_cm4.h:1684:22:__NVIC_EnableIRQ	16	static,ignoring_inline_asm
 ../Drivers/CMSIS/Include/core_cm4.h:1814:22:__NVIC_SetPriority	16	static
-../Core/Safety/safety.c:36:6:safety_init	8	static
-../Core/Safety/safety.c:93:6:safety_update	8	static
+../Core/Safety/safety.c:37:6:safety_init	8	static
+../Core/Safety/safety.c:84:6:safety_update	8	static
 ../Core/Safety/safety.c:146:6:safety_watchdog_kick	4	static
-../Core/Safety/safety.c:172:6:EXTI15_10_IRQHandler	4	static
+../Core/Safety/safety.c:172:6:EXTI9_5_IRQHandler	4	static
