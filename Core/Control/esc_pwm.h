@@ -7,7 +7,7 @@
 // ═══════════════════════════════════════════════════════════════
 // LAYER OVERVIEW:
 // Layer 0 (this file) — motor_cmd (-100 to +100) → PWM µs
-// Layer 1 (control.c) — throttle + turn → motor_cmd
+// Layer 1 (drive.c)   — throttle + steering → motor_cmd
 // Layer 2 (nav.c)     — heading/depth → throttle + turn  [TODO Stage 5]
 // Layer 3 (mission.c) — waypoints → heading/depth        [TODO Stage 7]
 // ═══════════════════════════════════════════════════════════════
@@ -17,9 +17,10 @@
 // Counter-rotating INWARD — tops rotate toward centreline
 // ═══════════════════════════════════════════════════════════════
 // USAGE:
-// 1. Call ESC_PWM_Init() once at startup after MX_TIM2_Init()
+// 1. Call ESC_PWM_Init() once at startup after TIM2 init
 // 2. Call ESC_PWM_Failsafe() on ANY safety event
-// 3. Use Drive_Set() in control.c for normal operation
+// 3. Call ESC_PWM_Arm() before first thrust command
+// 4. Use Drive_Set() in drive.c for normal operation
 //    or ESC_PWM_Set_Port/Stbd directly for bench testing
 // ═══════════════════════════════════════════════════════════════
 
@@ -70,6 +71,10 @@ void ESC_PWM_Init(void);
 //          invalid motor command, any safety event
 void ESC_PWM_Failsafe(void);
 
+// ESC arming sequence — sends neutral for 2s
+// Required before ESCs accept throttle commands
+void ESC_PWM_Arm(void);
+
 // Set individual thruster motor command
 // motor_cmd: MOTOR_CMD_MIN (-100) to MOTOR_CMD_MAX (+100)
 // Inversion applied internally — Layer 1 unaware of prop direction
@@ -81,8 +86,6 @@ void ESC_PWM_Set_Stbd(int16_t motor_cmd);
 void ESC_PWM_Set_Both(int16_t motor_cmd);
 
 // ── TODO: FUTURE PUBLIC FUNCTIONS ───────────────────────────────
-// Stage 3: void ESC_PWM_Arm(void)
-//          arming sequence — 1500µs for 2s → ESC beeps → armed
 // Stage 4: uint8_t ESC_PWM_IsArmed(void)
 //          returns 1 if ESC armed and ready
 // Stage 4: voltage compensation — scale PWM for battery level

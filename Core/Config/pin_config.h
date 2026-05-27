@@ -45,7 +45,7 @@
 // A1       CN8     PA1     3:2       TIM2 CH2 starboard ESC PWM   AF1
 // D1       CN9     PA2     5:4       UART2 TX → Pi/Mac             AF7
 // D0       CN9     PA3     7:6       UART2 RX ← Pi/Mac             AF7
-// A2       CN8     PA4     9:8       — available
+// A2       CN8     PA4     9:8       throttle pot ADC1 CH4 input
 // D13      CN5     PA5     11:10     TIM2 CH1 port ESC PWM         AF1
 // D12      CN5     PA6     13:12     — reserve SPI MISO / spare input
 // D11      CN5     PA7     15:14     — reserve SPI MOSI / spare output
@@ -79,7 +79,11 @@
 // MODER CLR:  1111 1111 1111 1111 1111 1111 0011 1111
 // MODER SET:  0000 0000 0000 0000 0000 0000 1000 0000  ← AF(10)
 
-                            // A2  PA4  9:8  — available
+#define POT_ADC_PA4     4   // A2  — 9:8    ADC1 CH4 throttle pot input
+//  IDR READ:  0000 0000 0000 0000 0000 0000 0001 0000
+// MODER CLR:  1111 1111 1111 1111 1111 1111 0000 1111
+// MODER SET:  0000 0000 0000 0000 0000 0000 0011 0000  ← ANALOG(11)
+// ADC:        ADC1 channel 4 — Stage 5 pot throttle input
 
 #define MOT_PORT_PA5    5   // D13 — 11:10  AF1  TIM2 CH1 port ESC
 //  ODR SET:   0000 0000 0000 0000 0000 0000 0010 0000

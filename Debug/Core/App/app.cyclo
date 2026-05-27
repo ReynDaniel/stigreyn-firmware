@@ -3,5 +3,5 @@
 ../Core/App/app.c:66:20:auv_state_string	8
 ../Core/App/app.c:87:6:app_init	1
 ../Core/App/app.c:105:6:app_update	8
-../Core/App/app.c:208:6:app_fault	3
-../Core/App/app.c:272:6:app_reset	1
+../Core/App/app.c:217:6:app_fault	3
+../Core/App/app.c:281:6:app_reset	1

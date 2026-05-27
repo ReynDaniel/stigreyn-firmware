@@ -125,28 +125,37 @@ void app_update(void)
         // ── SAFE — thrusters neutral, waiting ────────────────
         case STATE_SAFE:
             ESC_PWM_Failsafe();
-            // ── TODO: wait for arm command via UART ──────────
-            // Stage 6: if UART receives "ARM" → STATE_ARMED
+
+#if FEATURE_ESC_ARMING
+            // Stage 5a: first arming trigger uses Nucleo USER button PC13.
+            // Button pressed = logic LOW on most Nucleo boards.
+            // Later this can also be triggered by UART command "arm".
+            if (!(GPIOC->IDR & (1 << 13)))
+            {
+                ESC_PWM_Arm();
+                auv_state = STATE_ARMED;
+                printf("App: STATE_SAFE -> STATE_ARMED\r\n");
+            }
+#else
+            // ESC arming disabled in feature_flags.h
+#endif
             break;
 
         // ── ARMED — ESC armed, motors neutral, ready ─────────
         case STATE_ARMED:
             ESC_PWM_Set_Both(0);
-            // ── TODO: wait for drive command via UART ─────────
-            // Stage 6: if UART receives "MANUAL" → STATE_MANUAL
+            // Stage 5b/5c: drive_update() watches UART commands.
+            // First W/A/S/D command will transition to STATE_MANUAL.
             break;
 
         // ── MANUAL — throttle/steering commands ──────────────
         case STATE_MANUAL:
-            // ── TODO: MANUAL CONTROL ─────────────────────────
-            // Stage 6: parse UART commands into throttle/steering
+            // Stage 5c: manual control is owned by drive_update().
+            // Do not call ESC_PWM_Failsafe() here or it will overwrite
+            // valid W/A/S/D drive commands each loop tick.
             // Future manual inputs may include UART terminal control,
             // RC override, or tethered debug driving.
             // Suggested priority: RC override > UART terminal > autonomy.
-            // Drive_Set(throttle_cmd, steering_cmd);
-            // Ignore for now — continue
-            // ─────────────────────────────────────────────────
-            ESC_PWM_Failsafe();  // safe until implemented
             break;
 
         // ── AUTO — Pi sends mission commands ─────────────────
@@ -202,8 +211,8 @@ void app_update(void)
 // ═══════════════════════════════════════════════════════════════
 // app_fault
 // ───────────────────────────────────────────────────────────────
-// Purpose: force fault from any context
-// Hardware made safe first — then state updated
+// Purpose: classify a fault and force the vehicle into a safe state
+// Hardware made safe first — then state and fault record are updated
 // ═══════════════════════════════════════════════════════════════
 void app_fault(fault_reason_t reason, fault_severity_t severity)
 {

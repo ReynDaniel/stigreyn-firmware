@@ -19,12 +19,15 @@
 // Stage 2 ✅  TIM2 PWM — PA5 + PA1 confirmed on scope
 // Stage 3 ✅  UART debug — 115200 baud, PLL 84MHz
 // Stage 4a ✅  Safety framework — state machine, feature flags
-// Stage 4b →   Safety validation — leak ISR, watchdog, battery ADC
-// Stage 5 →   Sensors — IMU, Bar30 I2C
-// Stage 6 →   Control modes — MANUAL command interface
-// Stage 7 →   Pi integration — UART2 protocol, sleep/wake
-// Stage 8 →   ESP32-CAM, pinger, surface recovery
-// Stage 9 →   Full integration, bucket test, wet test
+// Stage 4b ✅  Safety validation — PA8/D7 leak ISR, multi-fault logging
+// Stage 5a →   ESC arming — neutral hold, STATE_SAFE → STATE_ARMED
+// Stage 5b →   Drive layer — throttle/steering mix, PWM clamps
+// Stage 5c →   Pot control — PA4/A2 test input, dry/wet bench validation
+// Stage 6 →    Sensors — battery ADC, IMU, Bar30 I2C
+// Stage 7 →    Control modes — safe, test, RC, auto
+// Stage 8 →    Pi integration — UART2 protocol, sleep/wake
+// Stage 9 →    ESP32-CAM, pinger, surface recovery
+// Stage 10 →   Full integration, bucket test, wet test
 // ═══════════════════════════════════════════════════════════════
 
 #ifndef FEATURE_FLAGS_H
@@ -43,13 +46,11 @@
 //  ✓ latched fault, operator reset only
 
 #define FEATURE_WATCHDOG            0   // IWDG hardware watchdog
-//  ✗ NOT YET — enable only after:
-//    ✓ main loop stable and tested
-//    ✓ all init functions completing reliably
-//    ✓ UART startup log printing cleanly every boot
-//    ✓ leak ISR tested and confirmed on PA8 / D7
+//  ✗ NOT YET — keep disabled during Stage 5 thruster bring-up
+//    ✓ enable only after ESC arming, Drive_Set(), and pot test are stable
+//    ✓ main loop health aggregation still required before enabling
 //  WARNING: once IWDG started it CANNOT be stopped without reset
-//  Enable by changing 0 → 1 AND adding safety_watchdog_init()
+//  Enable later by changing 0 → 1 AND adding safety_watchdog_init()
 
 #define FEATURE_BATTERY_ADC         0   // ADC1 CH0 — PA0 voltage
 //  ✗ NOT YET — enable after:
@@ -58,7 +59,32 @@
 //    ✓ BATT_WARN_MV / BATT_CRIT_MV thresholds validated
 //    Stage 4b
 
-// ── STAGE 5 — SENSORS ───────────────────────────────────────────
+// ── STAGE 5 — THRUSTER BRING-UP / BENCH TEST ───────────────────
+#define FEATURE_ESC_ARMING          1   // 2s neutral arming sequence
+//  ✓ enable now — next implementation target
+//    ✓ ESC_PWM_Arm() sends 1500µs neutral for 2s
+//    ✓ STATE_SAFE → STATE_ARMED transition tested first with no thrust
+//    ✓ USER button can be used as first dry arming trigger
+
+#define FEATURE_POT_CONTROL         1   // PA4/A2 pot → manual test throttle
+//  ✓ enable now — first wet-test input method
+//    ✓ PA4/A2 reserved for pot ADC so PA0/A0 remains battery ADC
+//    ✓ STM32 logs ADC count, command step, PWM µs, state, and faults
+//    ✓ Mac/terminal used for logging only; pot is local physical control
+
+#define FEATURE_TEST_LIMITS         1   // restrict PWM range for first tests
+//  ✓ enable now — safety during ESC and bucket testing
+//    ✓ start with neutral + gentle forward only
+//    ✓ keep reverse disabled until forward response and failsafe are verified
+//    ✓ widen limits only after scope + wet test confidence improves
+
+#define FEATURE_PWM_STEP_MODE       1   // snap pot input to fixed PWM steps
+//  ✓ enable now — cleaner first test data
+//    ✓ example steps: 1500, 1540, 1560, 1580, 1600, 1620 µs
+//    ✓ avoids vague continuous throttle while validating ESC response
+//    ✓ change to 0 later for smooth continuous pot control
+
+// ── STAGE 6 — SENSORS ───────────────────────────────────────────
 #define FEATURE_IMU                 0   // I2C1 — IMU on PB8/PB9
 //  ✗ NOT YET — enable after:
 //    ✓ I2C1 bare metal init complete
@@ -72,7 +98,7 @@
 //    ✓ Bar30 I2C address confirmed (0x76)
 //    ✓ pressure to depth conversion formula validated
 
-// ── STAGE 6 — CONTROL MODES ─────────────────────────────────────
+// ── STAGE 7 — CONTROL MODES ─────────────────────────────────────
 #define FEATURE_MANUAL_CONTROL      0   // UART command interface
 //  ✗ NOT YET — enable after:
 //    ✓ UART RX interrupt or polling implemented
@@ -80,14 +106,7 @@
 //    ✓ STATE_MANUAL tested with bench ESC (no thrusters)
 //    ✓ Drive_Set() mixing function validated on scope
 
-#define FEATURE_ESC_ARMING          0   // 2s neutral arming sequence
-//  ✗ NOT YET — enable before first ESC connection
-//    ✓ ESC_PWM_Arm() function written
-//    ✓ arming beep sequence confirmed
-//    ✓ STATE_ARMED transition tested
-//    Add before any ESC or thruster is connected
-
-// ── STAGE 7 — PI INTEGRATION ────────────────────────────────────
+#// ── STAGE 8 — PI INTEGRATION ────────────────────────────────────
 #define FEATURE_PI_COMMS            0   // UART2 protocol to Pi
 //  ✗ NOT YET — enable after:
 //    ✓ Pi UART script written and tested
@@ -100,7 +119,7 @@
 //    ✓ Pi boot time measured — know how long to wait
 //    ✓ Pi ready signal defined (UART acknowledgement)
 
-// ── STAGE 8 — SURFACE RECOVERY ──────────────────────────────────
+#// ── STAGE 9 — SURFACE RECOVERY ──────────────────────────────────
 #define FEATURE_PINGER              0   // acoustic pinger GPIO
 //  ✗ NOT YET — enable after:
 //    ✓ pinger hardware selected and wired
@@ -115,7 +134,7 @@
 //    ✓ Pi wake sequence on trigger validated
 //    ✓ burst imaging pipeline tested
 
-// ── STAGE 9 — AUTONOMY ──────────────────────────────────────────
+#// ── STAGE 10 — AUTONOMY / FULL INTEGRATION ──────────────────────
 #define FEATURE_AUTONOMY            0   // Pi autonomous commands
 //  ✗ NOT YET — enable after:
 //    ✓ ALL previous stages validated

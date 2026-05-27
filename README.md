@@ -16,9 +16,9 @@
 | 3 | UART — debug output, PLL 84MHz, 115200 baud                               | ✅ Complete |
 | 4a | Architecture — state machine, feature flags, safety framework            | ✅ Complete |
 | 4b | Safety validation — PA8/D7 leak ISR, fault latch, multi-fault logging    | ✅ Complete |
-| 5a | ESC arming — neutral hold, STATE_SAFE → STATE_ARMED transition            | 🔲 Planned |
-| 5b | Drive layer — throttle/steering mix, PWM limits, failsafe clamp           | 🔲 Planned |
-| 5c | Bench thruster validation — ESC + T200 test with external power           | 🔲 Planned |
+| 5a | ESC arming — neutral hold, STATE_SAFE → STATE_ARMED transition           | ✅ Complete |
+| 5b | Drive layer — differential thrust mixing, UART WASD control, PWM clamps  | ✅ Complete |
+| 5c | Bench thruster validation — ESC + T200 test with external power          | 🔄 In Progress |
 | 6 | Sensors — battery ADC, IMU, Bar30 over I2C                                | 🔲 Planned |
 | 7 | Control modes — safe, test, RC, auto                                      | 🔲 Planned |
 | 7 | Pi integration — UART protocol, sleep/wake                                | 🔲 Planned |
@@ -92,7 +92,7 @@ to conserve power.
 |------|--------|----------|
 | Thruster PWM control | TIM2 hardware PWM | Critical |
 | ESC arming sequence | Timed neutral PWM state machine | Critical |
-| Thruster mixing / limits | Firmware control layer | Critical |
+| Differential thrust mixing / limits | drive.c control layer | Critical |
 | Leak detection | EXTI8 interrupt (PA8 / D7) | Critical |
 | Watchdog / failsafe | IWDG hardware watchdog | Critical |
 | Battery monitoring | ADC1 CH0 | High |
@@ -148,11 +148,18 @@ Battery: 4S lithium 20Ah (12.0–16.8V)
 ESC signal: 50Hz, 1100–1900µs pulse width
 Counter-rotating props: starboard PWM inverted in firmware
 
-Future firmware stages will add:
+Stage 5 firmware now supports:
 - ESC neutral-hold arming sequence
-- Software throttle/steering mixing
-- PWM rate limiting and clamp protection
-- Manual bench-test mode before autonomous control
+- UART W/A/S/D manual thrust control
+- Differential thrust mixing
+- Command-space PWM safety clamps
+- Manual safe-stop and disarm control
+
+Planned future additions:
+- PWM ramp/rate limiting
+- Closed-loop thrust validation
+- Autonomous control integration
+- Pi command protocol integration
 
 ---
 
@@ -165,7 +172,7 @@ Future firmware stages will add:
 | PA1 | A1 | Starboard thruster PWM | TIM2 CH2 AF1 | ✅ |
 | PA2 | D1 | UART2 TX → Pi | AF7 | 🔲 |
 | PA3 | D0 | UART2 RX ← Pi | AF7 | 🔲 |
-| PA4 | A2 | Available | — | — |
+| PA4 | A2 | Reserved manual throttle input | Future ADC/manual control | 🔲 |
 | PA5 | D13 | Port thruster PWM | TIM2 CH1 AF1 | ✅ |
 | PA6 | D12 | Reserved SPI MISO | Spare / future SPI | 🔲 |
 | PA7 | D11 | Reserved SPI MOSI | Spare / future SPI | 🔲 |
@@ -216,6 +223,13 @@ PLL clock (Stage 3+):
 PSC = 83, ARR = 19999, TIM2 = 84MHz
 ```
 
+Stage 5 UART propulsion validation:
+- USER button triggers ESC neutral-hold arming sequence
+- W/A/S/D commands provide differential thrust control
+- SPACE returns both thrusters to 1500µs neutral
+- X forces immediate disarm/failsafe transition
+- PWM outputs validated live through UART telemetry logging
+
 ---
 
 ## Engineering Notes
@@ -242,9 +256,20 @@ Multi-fault tracking is supported through a bitmask-based fault system
 allowing multiple simultaneous faults while preserving a primary fault reason
 for logging and immediate response.
 
-The next development milestone is closed-loop thruster control validation.
-This includes ESC arming behaviour, software drive mixing, and bench-level
-thruster testing using externally powered ESCs before sealed integration.
+Stage 5 introduced a modular drive layer supporting UART-based W/A/S/D
+manual control from a host terminal. The firmware now supports:
+- ESC neutral-hold arming
+- Differential thrust mixing
+- Command-space safety clamps
+- Multi-state propulsion control
+- Manual safe-stop and disarm commands
+
+Initial propulsion validation was completed through live UART command
+parsing and real-time PWM verification prior to ESC wet testing.
+
+The next development milestone is physical thruster validation using
+externally powered ESCs and Blue Robotics T200 thrusters before sealed
+integration into the pressure hull.
 
 Internal hull pressure monitoring is planned as a future relative-pressure
 fault source using startup-sealed baseline comparison rather than only
@@ -272,7 +297,7 @@ PRE-DIVE ARMING:
 STATE_SAFE → timed neutral PWM hold
 ESCs complete startup beeps
 STATE_ARMED entered
-Manual bench-test mode permitted
+UART W/A/S/D manual bench-test mode permitted
 
 LOW BATTERY:
 STM32 ADC reads voltage drop
@@ -300,7 +325,7 @@ stigreyn_firmware/
 │   ├── Control/
 │   │   ├── esc_pwm.c       — low-level PWM output driver
 │   │   ├── esc_pwm.h
-│   │   ├── drive.c         — throttle/steering mixing (planned)
+│   │   ├── drive.c         — UART manual drive + differential thrust mix
 │   │   └── drive.h
 │   ├── Sensors/            — IMU, Bar30, battery ADC
 │   ├── Comms/              — UART to Pi protocol

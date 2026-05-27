@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════
 // LAYER OVERVIEW:
 // Layer 0 (this file) — motor_cmd (-100 to +100) → PWM µs
-// Layer 1 (control.c) — throttle + turn → motor_cmd
+// Layer 1 (drive.c)   — throttle + steering → motor_cmd
 // Layer 2 (nav.c)     — heading/depth → throttle + turn  [TODO Stage 5]
 // Layer 3 (mission.c) — waypoints → heading/depth        [TODO Stage 7]
 // ═══════════════════════════════════════════════════════════════
@@ -24,6 +24,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 #include "esc_pwm.h"
+#include <stdio.h>
 
 // ── MOTOR INVERSION FLAGS ───────────────────────────────────────
 // Compile-time constants — resolved before code runs
@@ -39,7 +40,7 @@ static void ESC_PWM_Set(motor_id_t motor, int16_t motor_cmd);
 // ESC_PWM_Init
 // ───────────────────────────────────────────────────────────────
 // Purpose: start bare metal PWM output on both thruster channels
-// Call:    once at startup, after MX_TIM2_Init() in main.c
+// Call:    once at startup, after bare-metal TIM2 init in main.c
 // Result:  TIM2 running, both outputs active, neutral signal out
 // ═══════════════════════════════════════════════════════════════
 void ESC_PWM_Init(void)
@@ -65,7 +66,7 @@ void ESC_PWM_Init(void)
 // Call:    on ANY safety event:
 //          leak detected, watchdog timeout, low battery,
 //          invalid motor command, comms lost
-// Result:  both thrusters → 1500µs → passive buoyant ascent
+// Result:  both thrusters → 1500µs → neutral / safe stop
 // ───────────────────────────────────────────────────────────────
 // BARE METAL DIRECT WRITE — fastest possible path
 // No function call overhead in safety critical code
@@ -76,7 +77,7 @@ void ESC_PWM_Failsafe(void)
     TIM2->CCR2 = PWM_NEUTRAL_US;    // stbd  → 1500µs → stop
 
     // ── TODO: SAFETY EVENT LOG ──────────────────────────────
-    // Stage 7: send failsafe event to Pi via UART2
+    // Stage 8: send failsafe event to Pi via UART2
     // Pi logs: reason, timestamp, depth, heading, battery
     // Ignore for now — continue
     // ─────────────────────────────────────────────────────────
@@ -200,22 +201,39 @@ static void ESC_PWM_Set(motor_id_t motor, int16_t motor_cmd)
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ── TODO: ESC ARMING SEQUENCE ─────────────────────────────────
-// Stage 3: void ESC_PWM_Arm(void)
-// Send PWM_NEUTRAL_US for 2000ms → ESC plays startup beeps → armed
-// Must complete before thrusters will respond to commands
-// Add before first ESC connection test
-// ─────────────────────────────────────────────────────────────
+// ESC_PWM_Arm
+// ───────────────────────────────────────────────────────────────
+// Purpose: hold both ESC outputs at neutral long enough for ESC arming
+// Call:    from application state machine during STATE_SAFE → STATE_ARMED
+// Result:  both ESCs see stable 1500µs neutral for 2 seconds
+// Note:    Uses HAL_Delay() intentionally because arming is a blocking
+//          pre-drive sequence, not a control-loop path.
+// ═══════════════════════════════════════════════════════════════
+void ESC_PWM_Arm(void)
+{
+    // Hardware safe first — both ESCs receive neutral.
+    TIM2->CCR1 = PWM_NEUTRAL_US;
+    TIM2->CCR2 = PWM_NEUTRAL_US;
 
+    printf("ESC: arming - neutral 1500us for 2s\r\n");
+
+    // Blue Robotics / hobby-style ESCs generally require a stable
+    // neutral pulse train before accepting throttle commands.
+    HAL_Delay(2000);
+
+    printf("ESC: armed\r\n");
+}
+
+// ═══════════════════════════════════════════════════════════════
 // ── TODO: RAMP LIMITING ───────────────────────────────────────
-// Stage 6: smooth acceleration profile
+// Stage 5b/7: smooth acceleration profile
 // Glider/aircraft dynamics — sudden thrust = pitch disturbance
 // Limit rate of change: max ±N motor_cmd units per control tick
 // Add at Stage 6 when control loop timer is running
 // ─────────────────────────────────────────────────────────────
 
 // ── TODO: RPM FEEDBACK ────────────────────────────────────────
-// Stage 5+: read ESC telemetry if available
+// Stage 6+: read ESC telemetry if available
 // Blue Robotics Basic ESC has no telemetry
 // Future: upgrade to ESC with UART telemetry for closed loop
 // ─────────────────────────────────────────────────────────────

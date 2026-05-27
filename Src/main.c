@@ -20,7 +20,10 @@
 // 6. tim2_pwm_gpio_init() — bare metal PA1/PA5 AF1 TIM2
 // 7. tim2_pwm_mode_init() — bare metal TIM2 PWM CH1+CH2
 // 8. ESC_PWM_Init()       — enable outputs, set neutral
-// 9. while(1)             — main loop, heartbeat LED
+// 9. safety_init()        — leak EXTI and safety system
+// 10. app_init()          — state machine to STATE_SAFE
+// 11. drive_init()        — WASD/manual drive interface
+// 12. while(1)            — app, drive, heartbeat loop
 // ═══════════════════════════════════════════════════════════════
 /* USER CODE END Header */
 
@@ -32,6 +35,7 @@
 #include "pin_config.h"
 #include "feature_flags.h"
 #include "esc_pwm.h"
+#include "drive.h"
 #include "app.h"
 #include "safety.h"
 #include <stdio.h>
@@ -104,11 +108,13 @@ int main(void)
 #endif
 
     app_init();
+    drive_init();
 
     // ── Startup log ───────────────────────────────────────────
     printf("StigReyn AUV v1.0 starting...\r\n");
     printf("Clock: PLL 84MHz\r\n");
     printf("ESC PWM init complete - PA5 + PA1 neutral\r\n");
+    printf("Drive interface ready - WASD UART control\r\n");
     printf("System ready - STATE_SAFE\r\n");
 
     /* USER CODE END 2 */
@@ -121,6 +127,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
 
         app_update();
+        drive_update();
         HAL_Delay(10);   // 100Hz tick
 
 #if FEATURE_HEARTBEAT_LED
@@ -134,11 +141,11 @@ int main(void)
         }
 #endif
 
-        // ── TODO: MAIN CONTROL LOOP ───────────────────────────
-        // Stage 4: safety checks — leak, battery, watchdog
-        // Stage 5: sensor reads — IMU, Bar30
-        // Stage 6: Drive_Set() — throttle + turn
-        // Stage 7: UART RX — commands from Pi
+        // ── MAIN CONTROL LOOP NOTES ───────────────────────────
+        // app_update()   — safety first, state machine, faults
+        // drive_update() — Stage 5 WASD UART manual drive commands
+        // Future Stage 6: sensors — battery ADC, IMU, Bar30
+        // Future Stage 8: Pi UART protocol / autonomous commands
         // ─────────────────────────────────────────────────────
     }
     /* USER CODE END 3 */

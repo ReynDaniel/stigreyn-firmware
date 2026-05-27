@@ -5,12 +5,15 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
+../Core/Control/drive.c \
 ../Core/Control/esc_pwm.c 
 
 OBJS += \
+./Core/Control/drive.o \
 ./Core/Control/esc_pwm.o 
 
 C_DEPS += \
+./Core/Control/drive.d \
 ./Core/Control/esc_pwm.d 
 
 
@@ -21,7 +24,7 @@ Core/Control/%.o Core/Control/%.su Core/Control/%.cyclo: ../Core/Control/%.c Cor
 clean: clean-Core-2f-Control
 
 clean-Core-2f-Control:
-	-$(RM) ./Core/Control/esc_pwm.cyclo ./Core/Control/esc_pwm.d ./Core/Control/esc_pwm.o ./Core/Control/esc_pwm.su
+	-$(RM) ./Core/Control/drive.cyclo ./Core/Control/drive.d ./Core/Control/drive.o ./Core/Control/drive.su ./Core/Control/esc_pwm.cyclo ./Core/Control/esc_pwm.d ./Core/Control/esc_pwm.o ./Core/Control/esc_pwm.su
 
 .PHONY: clean-Core-2f-Control
 
